@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEURO-CORE v3 | Interactive Multi-Processor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap');
+
+        body { margin: 0; overflow: hidden; font-family: 'Rajdhani', sans-serif; background: #020617; transition: 0.5s; cursor: crosshair; }
+        #canvas-container { position: fixed; top: 0; left: 0; z-index: -1; width: 100%; height: 100%; }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.4);
+            backdrop-filter: blur(25px);
+            border: 1px solid rgba(0, 242, 255, 0.2);
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+        }
+
+        /* Data Chip Animation */
+        .data-chip {
+            animation: slideIn 0.4s ease-out forwards;
+            background: linear-gradient(90deg, rgba(0, 242, 255, 0.1), transparent);
+            border-left: 3px solid #00f2ff;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .typewriter {
+            overflow: hidden;
+            border-right: .15em solid #00f2ff;
+            white-space: nowrap;
+            display: inline-block;
+            animation: typing 1.5s steps(30, end), blink-caret .75s step-end infinite;
+        }
+
+        @keyframes typing { from { width: 0 } to { width: 100% } }
+        @keyframes blink-caret { from, to { border-color: transparent } 50% { border-color: #00f2ff; } }
+
+        /* Custom Scrollbar for results */
+        #result-content::-webkit-scrollbar { width: 4px; }
+        #result-content::-webkit-scrollbar-thumb { background: #00f2ff; }
+
+        .light-mode { background: #f1f5f9; color: #0f172a; }
+        .light-mode .glass-panel { background: rgba(255, 255, 255, 0.8); border-color: #0ea5e9; }
+    </style>
+</head>
+<body id="main-body" class="text-white">
+
+    <div id="canvas-container"></div>
+
+    <button onclick="toggleTheme()" class="fixed top-6 right-6 z-[110] w-12 h-12 bg-slate-900/80 rounded-xl border border-cyan-500 flex items-center justify-center hover:shadow-[0_0_20px_#00f2ff] transition-all">
+        <i id="theme-icon" class="fas fa-microchip text-cyan-400"></i>
+    </button>
+
+    <div id="workspace" class="flex flex-col items-center justify-center min-h-screen p-6">
+        <div class="text-center mb-12">
+            <h1 class="text-6xl font-bold font-cyber tracking-tighter mb-2 italic">NEURO<span class="text-cyan-400">CORE</span> <span class="text-xs text-cyan-500 border border-cyan-500 px-2 rounded">BETA v3.1</span></h1>
+            <p class="text-slate-500 tracking-[0.5em] uppercase text-[10px]">Neural-Link Advanced Scan Array</p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 max-w-6xl w-full h-[500px]">
+            
+            <div class="glass-panel rounded-3xl p-8 flex flex-col">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="font-cyber text-sm tracking-widest text-cyan-400">INPUT_BUFFER</h2>
+                    <span id="queue-count" class="text-[10px] bg-cyan-500/20 px-2 py-1 rounded text-cyan-300">0 SCANS</span>
+                </div>
+
+                <div class="relative group h-40 border-2 border-dashed border-cyan-500/20 rounded-2xl flex flex-col items-center justify-center hover:border-cyan-400 hover:bg-cyan-500/5 transition-all cursor-pointer mb-6">
+                    <input type="file" id="fileElem" multiple accept="image/*" class="hidden" onchange="addToQueue(this.files)">
+                    <label for="fileElem" class="cursor-pointer text-center">
+                        <i class="fas fa-plus-circle text-3xl text-cyan-500 mb-2 group-hover:scale-125 transition-transform"></i>
+                        <p class="text-xs font-bold uppercase tracking-widest">Add MRI Slice</p>
+                    </label>
+                </div>
+
+                <div id="file-queue" class="flex-1 overflow-y-auto space-y-2 pr-2">
+                    <p class="text-center text-slate-600 text-xs mt-10 italic">Queue is empty. Awaiting data...</p>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-3xl p-8 flex flex-col justify-between">
+                <div>
+                    <h2 class="font-cyber text-sm tracking-widest text-cyan-400 mb-8">SYSTEM_COMMAND</h2>
+                    <p class="text-slate-400 text-sm leading-relaxed">
+                        Verify all MRI slices are correctly oriented. The neural core will process images sequentially to identify Glioma, Meningioma, and Pituitary pathologies.
+                    </p>
+                </div>
+
+                <div class="space-y-4">
+                    <button id="clear-btn" onclick="clearQueue()" class="w-full py-3 text-xs font-bold text-red-400 hover:text-red-300 transition-colors hidden">CLEAR BUFFER</button>
+                    <button onclick="processBatch()" id="process-btn" class="hidden w-full bg-cyan-500 hover:bg-cyan-400 text-black font-black py-5 rounded-xl transition-all shadow-[0_0_30px_rgba(0,242,255,0.3)] uppercase tracking-widest text-sm">
+                        Execute Neural Diagnostic
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="result-modal" class="fixed inset-0 z-[200] hidden bg-slate-950/95 backdrop-blur-3xl overflow-y-auto">
+        <div class="max-w-5xl mx-auto py-20 px-6">
+            <div class="flex justify-between items-end mb-16 border-b border-cyan-500/30 pb-6">
+                <div>
+                    <h2 class="text-4xl font-cyber italic text-white">SCAN_ANALYSIS_REPORT</h2>
+                    <p class="text-cyan-500 text-xs tracking-[0.3em] mt-2">TOTAL SLICES PROCESSED: <span id="final-count">0</span></p>
+                </div>
+                <button onclick="closeModal()" class="text-slate-500 hover:text-white transition-colors uppercase text-xs font-bold tracking-widest">Close Terminal [ESC]</button>
+            </div>
+
+            <div id="result-content" class="space-y-32">
+                </div>
+        </div>
+    </div>
+
+    <script>
+        // --- IMPROVED INTERACTIVE 3D BACKGROUND ---
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // Create a Grid of interactive nodes
+        const points = [];
+        for (let i = 0; i < 1500; i++) {
+            const x = THREE.MathUtils.randFloatSpread(2000);
+            const y = THREE.MathUtils.randFloatSpread(2000);
+            const z = THREE.MathUtils.randFloatSpread(2000);
+            points.push(x, y, z);
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+        const material = new THREE.PointsMaterial({ color: 0x00f2ff, size: 3, transparent: true, opacity: 0.6 });
+        const starField = new THREE.Points(geometry, material);
+        scene.add(starField);
+
+        camera.position.z = 1000;
+
+        // Mouse Interaction
+        let mouseX = 0, mouseY = 0;
+        document.addEventListener('mousemove', (e) => {
+            mouseX = (e.clientX - window.innerWidth / 2) / 100;
+            mouseY = (e.clientY - window.innerHeight / 2) / 100;
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            starField.rotation.y += 0.002;
+            // Smoothly follow mouse
+            starField.position.x += (mouseX - starField.position.x) * 0.05;
+            starField.position.y += (-mouseY - starField.position.y) * 0.05;
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // --- QUEUE SYSTEM LOGIC ---
+        let selectedFiles = [];
+        const API_URL = "http://127.0.0.1:8000/predict";
+
+        function addToQueue(files) {
+            const queueList = document.getElementById('file-queue');
+            if (selectedFiles.length === 0) queueList.innerHTML = ""; // Clear placeholder
+
+            Array.from(files).forEach((file, index) => {
+                selectedFiles.push(file);
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const chip = document.createElement('div');
+                    chip.className = "data-chip flex items-center p-3 mb-2 rounded-r-lg bg-slate-800/40";
+                    chip.innerHTML = `
+                        <img src="${e.target.result}" class="w-10 h-10 object-cover rounded border border-cyan-500/30 mr-4">
+                        <div class="flex-1">
+                            <p class="text-[10px] text-cyan-400 font-bold uppercase truncate">${file.name}</p>
+                            <p class="text-[8px] text-slate-500 tracking-widest uppercase italic">Ready for analysis</p>
+                        </div>
+                        <i class="fas fa-check text-[10px] text-green-500 ml-4"></i>
+                    `;
+                    queueList.appendChild(chip);
+                };
+                reader.readAsDataURL(file);
+            });
+
+            document.getElementById('queue-count').innerText = `${selectedFiles.length} SCANS`;
+            document.getElementById('process-btn').classList.remove('hidden');
+            document.getElementById('clear-btn').classList.remove('hidden');
+        }
+
+        function clearQueue() {
+            selectedFiles = [];
+            document.getElementById('file-queue').innerHTML = '<p class="text-center text-slate-600 text-xs mt-10 italic">Queue is empty. Awaiting data...</p>';
+            document.getElementById('queue-count').innerText = `0 SCANS`;
+            document.getElementById('process-btn').classList.add('hidden');
+            document.getElementById('clear-btn').classList.add('hidden');
+        }
+
+        async function processBatch() {
+            const btn = document.getElementById('process-btn');
+            btn.innerText = "PROCESSING SEQUENTIAL ARRAY...";
+            btn.disabled = true;
+
+            const contentArea = document.getElementById('result-content');
+            contentArea.innerHTML = ""; 
+
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch(API_URL, { method: 'POST', body: formData });
+                    const data = await response.json();
+                    const imgUrl = URL.createObjectURL(file);
+                    
+                    contentArea.innerHTML += `
+                        <div class="flex flex-col md:flex-row items-center gap-16">
+                            <div class="w-full md:w-5/12">
+                                <div class="relative p-2 border border-cyan-500/20 rounded-[2rem] bg-slate-900/50">
+                                    <img src="${imgUrl}" class="w-full rounded-[1.8rem] shadow-[0_0_40px_rgba(0,242,255,0.15)]">
+                                    <div class="absolute -bottom-4 -right-4 bg-cyan-500 text-black font-black px-4 py-2 text-xs rounded-lg">SCAN_0${i+1}</div>
+                                </div>
+                            </div>
+                            <div class="flex-1 space-y-8">
+                                <div>
+                                    <span class="text-[10px] text-cyan-500 font-cyber tracking-widest uppercase">Pathological ID</span>
+                                    <h3 class="text-7xl font-bold italic tracking-tighter typewriter text-white">${data.tumor_type}</h3>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div class="p-6 bg-white/5 rounded-2xl border border-white/5">
+                                        <p class="text-[10px] text-slate-500 uppercase mb-2">Neural Certainty</p>
+                                        <p class="text-3xl font-cyber text-cyan-400">${data.confidence}%</p>
+                                    </div>
+                                    <div class="p-6 bg-white/5 rounded-2xl border border-white/5 flex items-center">
+                                         <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                                            <div class="h-full bg-cyan-500" style="width: ${data.confidence}%"></div>
+                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } catch (err) { console.error(err); }
+            }
+
+            document.getElementById('final-count').innerText = selectedFiles.length;
+            document.getElementById('result-modal').classList.remove('hidden');
+            btn.innerText = "Execute Neural Diagnostic";
+            btn.disabled = false;
+        }
+
+        function closeModal() { document.getElementById('result-modal').classList.add('hidden'); }
+
+        function toggleTheme() {
+            document.getElementById('main-body').classList.toggle('light-mode');
+            const isLight = document.getElementById('main-body').classList.contains('light-mode');
+            starField.material.color.setHex(isLight ? 0x0ea5e9 : 0x00f2ff);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
