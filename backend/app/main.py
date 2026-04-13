@@ -146,7 +146,7 @@ async def predict(file: UploadFile = File(...)):
 
         # 2. Heatmap Generation (Requires gradients)
         model.train() # Set to train briefly to allow gradient flow for Grad-CAM
-        heatmap_base64 = generate_heatmap(input_tensor, model, original_img)
+        heatmap_base64 = generate_heatmap(input_tensor, model,original_img)
         model.eval()
 
         return {
