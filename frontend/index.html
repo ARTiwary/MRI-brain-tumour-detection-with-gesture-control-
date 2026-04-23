@@ -26,7 +26,7 @@
             border: 2px solid #00f2ff; border-radius: 50%;
             pointer-events: none; z-index: 9999; opacity: 0;
             box-shadow: 0 0 15px #00f2ff;
-            transition: opacity .3s, box-shadow .15s, background-color .15s;
+            transition: opacity .3s, box-shadow .15s, border-color .1s;
             will-change: transform;
         }
 
@@ -514,15 +514,12 @@ function addFileToQueue(fileObj, url){
 
 
 /* ═══════════════════════════════════════════
-   4. GESTURE ENGINE v4.0
-      ✔ Palm reset        (unchanged from v3.4)
-      ✔ Pinch-click       (unchanged from v3.4)
-      ✔ Dwell hover       (added in v4.0)
-      ✔ GRAB → DRAG → DROP (new in v4.1)
-         — Pinch ON a file row = GRAB (ghost appears)
-         — Keep pinching + move hand = DRAG ghost follows
-         — Release pinch over drop zone = DROP → queued
-         — Release elsewhere = CANCEL
+   4. GESTURE ENGINE v4.2 — SMOOTH & ACCURATE
+   ✔ EMA smoothing on cursor (no jitter)
+   ✔ Velocity-based momentum scroll
+   ✔ Adaptive pinch hysteresis (no false fires)
+   ✔ Smoothed ghost drag position
+   ✔ Dead-zone filter (ignores micro-tremors)
 ══════════════════════════════════════════ */
 const videoEl   = document.getElementById('webcam');
 const cursor    = document.getElementById('gesture-cursor');
@@ -534,60 +531,87 @@ const ghostImg  = document.getElementById('ghost-img');
 const ghostLbl  = document.getElementById('ghost-label');
 const dropZone  = document.getElementById('drop-upload-zone');
 
+// ── SMOOTHING CONSTANTS ──
+const ALPHA       = 0.18;   // EMA factor for cursor (lower = smoother, 0.1–0.25 ideal)
+const ALPHA_FAST  = 0.35;   // faster EMA for ghost drag (more responsive)
+const DEAD_ZONE   = 3;      // px — ignore movements smaller than this (tremor filter)
+const PINCH_CLOSE = 0.048;  // pinch closed threshold
+const PINCH_OPEN  = 0.085;  // pinch open threshold (hysteresis gap prevents bouncing)
+
+// ── SMOOTHED POSITIONS (EMA accumulators) ──
+let smX = -1, smY = -1;         // smoothed cursor position
+let smGX = -1, smGY = -1;       // smoothed ghost position
+let sm2X = -1, sm2Y = -1;       // smoothed second cursor
+
+// ── PINCH STATE ──
 let isPinching = false, lastAction = 0;
+let pinchConfirm = 0;            // consecutive frames pinch detected (prevents false fires)
+
+// ── DWELL STATE ──
 let dwellEl = null, dwellStart = 0;
-const DWELL = 1500;
+const DWELL = 1400;
 
 // ── DRAG STATE ──
-let dragMode   = false;
-let dragFile   = null;
-let dragSource = null;
+let dragMode = false, dragFile = null, dragSource = null;
 
-// ── TWO-FINGER SCROLL STATE ──
-let scrolling      = false;
-let lastScrollY    = null;   // previous Y of hand[0] index tip
-const SCROLL_SPEED = 6;      // px scrolled per unit of hand movement
-const resultModal  = document.getElementById('result-modal');
-const cursor2El    = document.getElementById('cursor2');
-const scrollInd    = document.getElementById('scroll-indicator');
-const scrollThumb  = document.getElementById('scroll-thumb');
+// ── SCROLL STATE ──
+let lastScrollY   = null;
+let scrollVel     = 0;           // momentum velocity
+let scrollRafId   = null;        // requestAnimationFrame id for momentum
+const SCROLL_MULT = 5.5;         // base scroll multiplier
+const FRICTION    = 0.88;        // momentum friction per frame (0.8–0.92)
+const resultModal = document.getElementById('result-modal');
+const cursor2El   = document.getElementById('cursor2');
+const scrollInd   = document.getElementById('scroll-indicator');
+const scrollThumb = document.getElementById('scroll-thumb');
+
+// ── EMA helper ──
+function ema(prev, next, a){ return prev < 0 ? next : prev + a*(next-prev); }
 
 function updateScrollThumb(){
-    const pct = resultModal.scrollTop / (resultModal.scrollHeight - resultModal.clientHeight || 1);
-    scrollThumb.style.top = (pct * 70) + '%';   // 70% travel within 90px track
+    const pct = resultModal.scrollTop / Math.max(1, resultModal.scrollHeight - resultModal.clientHeight);
+    scrollThumb.style.top = (pct * 68) + '%';
 }
+
+// Momentum scroll loop
+function momentumScroll(){
+    if(Math.abs(scrollVel) < 0.5){ scrollVel=0; return; }
+    resultModal.scrollTop += scrollVel;
+    scrollVel *= FRICTION;
+    updateScrollThumb();
+    scrollRafId = requestAnimationFrame(momentumScroll);
+}
+
+function stopMomentum(){ cancelAnimationFrame(scrollRafId); scrollVel=0; }
 
 function showScrollIndicator(){ scrollInd.classList.add('visible'); }
 function hideScrollIndicator(){ scrollInd.classList.remove('visible'); cursor2El.style.opacity='0'; }
 
 function showTip(msg, ms=1100){
     tooltip.textContent=msg; tooltip.classList.add('show');
-    setTimeout(()=>tooltip.classList.remove('show'), ms);
+    clearTimeout(showTip._t);
+    showTip._t=setTimeout(()=>tooltip.classList.remove('show'), ms);
 }
 function setLog(txt,col='#94a3b8'){ logLine.style.color=col; logLine.textContent=txt; }
 
-// Show the floating ghost card at hand position
 function showGhost(file, x, y){
-    ghostImg.src  = file.url;
-    ghostLbl.textContent = file.name.length>20 ? file.name.substring(0,18)+'…' : file.name;
+    ghostImg.src = file.url;
+    ghostLbl.textContent = file.name.length>22 ? file.name.substring(0,20)+'…' : file.name;
     ghost.classList.add('active');
-    moveGhost(x, y);
+    smGX=x; smGY=y;
+    ghost.style.left=(x+18)+'px'; ghost.style.top=(y-20)+'px';
 }
 function moveGhost(x, y){
-    ghost.style.left = (x + 18)+'px';
-    ghost.style.top  = (y - 20)+'px';
+    smGX = ema(smGX, x, ALPHA_FAST);
+    smGY = ema(smGY, y, ALPHA_FAST);
+    ghost.style.left=(smGX+18)+'px'; ghost.style.top=(smGY-20)+'px';
 }
-function hideGhost(){
-    ghost.classList.remove('active');
-}
+function hideGhost(){ ghost.classList.remove('active'); smGX=-1; smGY=-1; }
 
-// Check if (x,y) is inside the drop zone rect
 function overDropZone(x, y){
     const r = dropZone.getBoundingClientRect();
     return x>=r.left && x<=r.right && y>=r.top && y<=r.bottom;
 }
-
-// Drop animation: flash the drop zone, then queue the file
 function commitDrop(file){
     dropZone.classList.add('drag-over');
     setTimeout(()=>dropZone.classList.remove('drag-over'), 600);
@@ -595,64 +619,66 @@ function commitDrop(file){
     showTip('DROP → QUEUED ✓', 1200);
     setLog('DROPPED','#00ff88');
 }
-
-// Cancel drag cleanly
 function cancelDrag(){
     if(dragSource) dragSource.classList.remove('is-grabbed');
     dragMode=false; dragFile=null; dragSource=null;
-    hideGhost();
-    dropZone.classList.remove('drag-over');
+    hideGhost(); dropZone.classList.remove('drag-over');
 }
 
 const hands = new Hands({ locateFile: f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
-hands.setOptions({ maxNumHands:2, modelComplexity:1, minDetectionConfidence:0.7, minTrackingConfidence:0.7 });
+hands.setOptions({ maxNumHands:2, modelComplexity:1, minDetectionConfidence:0.75, minTrackingConfidence:0.75 });
 
 hands.onResults(results=>{
     const allHands = results.multiHandLandmarks || [];
-
-    // ══════════════════════════════════════
-    //  TWO-FINGER SCROLL (2 hands detected
-    //  AND result modal is open)
-    // ══════════════════════════════════════
     const modalOpen = !resultModal.classList.contains('hidden');
 
+    // ══════════════════════════════════════
+    //  TWO-FINGER SCROLL — smooth momentum
+    // ══════════════════════════════════════
     if(allHands.length === 2 && modalOpen){
-        // Use index fingertip (landmark 8) of each hand
-        const h0 = allHands[0];
-        const h1 = allHands[1];
+        stopMomentum();
 
-        // Screen coords for both index tips
-        const x0 = (1-h0[8].x)*innerWidth,  y0 = h0[8].y*innerHeight;
-        const x1 = (1-h1[8].x)*innerWidth,  y1 = h1[8].y*innerHeight;
+        const h0=allHands[0], h1=allHands[1];
+        const raw0x=(1-h0[8].x)*innerWidth, raw0y=h0[8].y*innerHeight;
+        const raw1x=(1-h1[8].x)*innerWidth, raw1y=h1[8].y*innerHeight;
 
-        // Show both cursors
+        // Smooth each cursor independently
+        smX  = ema(smX,  raw0x, ALPHA);
+        smY  = ema(smY,  raw0y, ALPHA);
+        sm2X = ema(sm2X, raw1x, ALPHA);
+        sm2Y = ema(sm2Y, raw1y, ALPHA);
+
         cursor.style.opacity='1';
-        cursor.style.transform=`translate3d(${x0-15}px,${y0-15}px,0)`;
+        cursor.style.transform=`translate3d(${smX-15}px,${smY-15}px,0)`;
         cursor.style.borderColor='#00f2ff'; cursor.style.boxShadow='0 0 15px #00f2ff';
 
         cursor2El.style.opacity='1';
-        cursor2El.style.transform=`translate3d(${x1-11}px,${y1-11}px,0)`;
+        cursor2El.style.transform=`translate3d(${sm2X-11}px,${sm2Y-11}px,0)`;
 
-        // Average Y of the two index tips — moving both hands up = scroll up
-        const avgY = (y0 + y1) / 2;
+        const avgY = (smY + sm2Y) / 2;
 
         if(lastScrollY !== null){
-            const delta = (avgY - lastScrollY) * SCROLL_SPEED;
-            resultModal.scrollTop += delta;
-            updateScrollThumb();
-            if(Math.abs(delta)>1){
-                setLog(delta>0?'SCROLL ↓':'SCROLL ↑', '#f59e0b');
+            const rawDelta = (avgY - lastScrollY) * SCROLL_MULT;
+            // Dead-zone: ignore tiny tremors
+            if(Math.abs(rawDelta) > 0.8){
+                scrollVel = rawDelta;   // feed into momentum
+                resultModal.scrollTop += rawDelta;
+                updateScrollThumb();
+                setLog(rawDelta>0?'SCROLL ↓':'SCROLL ↑','#f59e0b');
                 showScrollIndicator();
             }
         }
         lastScrollY = avgY;
 
         sensorSt.innerText='2-HAND'; sensorSt.className='status-pill bg-yellow-500/20 text-yellow-400 border border-yellow-500/50';
-        return; // skip single-hand logic entirely
+        return;
     } else {
-        // Reset scroll state when only 1 or 0 hands
+        // Hand(s) left frame — apply momentum coast
+        if(lastScrollY !== null && Math.abs(scrollVel) > 1){
+            scrollRafId = requestAnimationFrame(momentumScroll);
+        }
         lastScrollY = null;
-        if(scrolling){ scrolling=false; }
+        sm2X=-1; sm2Y=-1;
         cursor2El.style.opacity='0';
         if(!modalOpen) hideScrollIndicator();
     }
@@ -662,20 +688,29 @@ hands.onResults(results=>{
         sensorSt.innerText='OFFLINE'; sensorSt.className='status-pill bg-red-500/20 text-red-500 border border-red-500/50';
         setLog('NO HAND','#ef4444'); dwellEl=null;
         if(dragMode) cancelDrag();
+        smX=-1; smY=-1;
         return;
     }
 
+    // ── Single hand — apply EMA smoothing ──
+    const hand  = allHands[0];
+    const rawX  = (1-hand[8].x)*innerWidth;
+    const rawY  = hand[8].y*innerHeight;
+
+    smX = ema(smX, rawX, ALPHA);
+    smY = ema(smY, rawY, ALPHA);
+
+    // Dead-zone: only move cursor if moved more than DEAD_ZONE px
+    const dx = Math.abs(smX - rawX), dy = Math.abs(smY - rawY);
+    const x = smX, y = smY;
+
     cursor.style.opacity='1';
-    sensorSt.innerText='ONLINE'; sensorSt.className='status-pill bg-green-500/20 text-green-500 border border-green-500/50 animate-pulse';
-
-    const hand = allHands[0];
-    const x = (1-hand[8].x)*innerWidth;
-    const y = hand[8].y*innerHeight;
-
-    cursor.style.transform = `translate3d(${x-15}px,${y-15}px,0)`;
+    cursor.style.transform=`translate3d(${x-15}px,${y-15}px,0)`;
     tooltip.style.left=(x+22)+'px'; tooltip.style.top=(y-14)+'px';
 
-    // ── PALM RESET (unchanged from v3.4) ──
+    sensorSt.innerText='ONLINE'; sensorSt.className='status-pill bg-green-500/20 text-green-500 border border-green-500/50 animate-pulse';
+
+    // ── PALM RESET ──
     const palm = hand[8].y<hand[6].y && hand[12].y<hand[10].y && hand[16].y<hand[14].y && hand[20].y<hand[18].y;
     if(palm && Date.now()-lastAction>3000){
         if(dragMode) cancelDrag();
@@ -685,106 +720,88 @@ hands.onResults(results=>{
         setTimeout(()=>location.reload(),800); return;
     }
 
+    // ── PINCH with hysteresis ──
     const pinch = Math.hypot(hand[8].x-hand[4].x, hand[8].y-hand[4].y);
-    const isPinchClosed = pinch < 0.05;
-    const isPinchOpen   = pinch > 0.09;
+    // Use separate thresholds to prevent rapid open/close bouncing
+    const isPinchClosed = pinch < PINCH_CLOSE;
+    const isPinchOpen   = pinch > PINCH_OPEN;
 
-    // ══════════════════════════════════════
-    //  DRAG MODE — hand is pinching + moving
-    // ══════════════════════════════════════
+    // ── DRAG MODE ──
     if(dragMode){
-        if(isPinchClosed){
-            // Still holding — move ghost with hand
+        if(!isPinchOpen){   // still holding (closed or mid-range)
             moveGhost(x, y);
             cursor.style.borderColor='#f59e0b'; cursor.style.boxShadow='0 0 25px #f59e0b';
             setLog('DRAGGING','#f59e0b');
-
-            // Highlight drop zone if hovering over it
             if(overDropZone(x,y)){
                 dropZone.classList.add('drag-over');
                 showTip('RELEASE TO DROP',400);
             } else {
                 dropZone.classList.remove('drag-over');
             }
-        } else if(isPinchOpen){
-            // Released pinch — check if over drop zone
-            if(overDropZone(x,y)){
-                commitDrop(dragFile);
-            } else {
-                showTip('DRAG CANCELLED',900);
-                setLog('IDLE','#94a3b8');
-            }
-            cancelDrag();
-            lastAction = Date.now();
+        } else {            // released
+            if(overDropZone(x,y)) commitDrop(dragFile);
+            else { showTip('DRAG CANCELLED',900); setLog('IDLE','#94a3b8'); }
+            cancelDrag(); lastAction=Date.now();
         }
-        return; // skip normal pinch/dwell logic during drag
+        return;
     }
 
-    // ══════════════════════════════════════
-    //  PINCH — either GRAB a file or CLICK
-    // ══════════════════════════════════════
+    // ── PINCH CLICK / GRAB ──
     if(isPinchClosed){
         cursor.style.borderColor='#bc13fe'; cursor.style.boxShadow='0 0 25px #bc13fe';
         setLog('PINCH','#bc13fe');
+        pinchConfirm++;
 
-        if(!isPinching && Date.now()-lastAction>700){
+        // Require 2 consecutive pinch frames before firing (prevents accidental triggers)
+        if(pinchConfirm >= 2 && !isPinching && Date.now()-lastAction>650){
             isPinching=true; lastAction=Date.now(); dwellEl=null;
-
             const el = document.elementFromPoint(x,y);
             if(el){
-                // Check if pinching ON a draggable file row
                 const fileRow = el.closest('.file-row[data-drag-pool]');
                 if(fileRow){
-                    // ── GRAB! ──
-                    const pool  = fileRow.dataset.dragPool;
-                    const fi    = parseInt(fileRow.dataset.dragFi);
-                    const fj    = fileRow.dataset.dragFj !== undefined && fileRow.dataset.dragFj !== '' ? parseInt(fileRow.dataset.dragFj) : null;
-
-                    let file = null;
-                    if(pool==='folder' && fj!==null && folders[fi]) file = folders[fi].files[fj];
-                    else if(pool==='loose')                          file = looseFiles[fi];
-
+                    const pool = fileRow.dataset.dragPool;
+                    const fi   = parseInt(fileRow.dataset.dragFi);
+                    const fj   = fileRow.dataset.dragFj!==undefined && fileRow.dataset.dragFj!=='' ? parseInt(fileRow.dataset.dragFj) : null;
+                    let file   = null;
+                    if(pool==='folder' && fj!==null && folders[fi]) file=folders[fi].files[fj];
+                    else if(pool==='loose') file=looseFiles[fi];
                     if(file){
-                        dragMode   = true;
-                        dragFile   = file;
-                        dragSource = fileRow;
+                        dragMode=true; dragFile=file; dragSource=fileRow;
                         fileRow.classList.add('is-grabbed');
                         showGhost(file, x, y);
                         setLog('GRABBED','#f59e0b');
                         showTip('DRAG TO DROP ZONE',1000);
                     }
                 } else {
-                    // Normal pinch-click for buttons, folder toggles, etc.
                     const clickable = el.closest('.g-clickable, button, [onclick]');
                     if(clickable){ clickable.click(); showTip('PINCH SELECT',700); }
                 }
             }
         }
-    } else if(isPinchOpen){
-        isPinching=false;
-        cursor.style.borderColor='#00f2ff'; cursor.style.boxShadow='0 0 15px #00f2ff';
+    } else {
+        pinchConfirm = 0;
+        if(isPinchOpen){
+            isPinching=false;
+            cursor.style.borderColor='#00f2ff'; cursor.style.boxShadow='0 0 15px #00f2ff';
+        }
     }
 
-    // ══════════════════════════════════════
-    //  DWELL HOVER (unchanged from v4.0)
-    // ══════════════════════════════════════
+    // ── DWELL HOVER ──
     if(isPinchOpen && !dragMode){
         const el = document.elementFromPoint(x,y);
         const target = el ? el.closest('.g-clickable') : null;
-
         document.querySelectorAll('.g-hover').forEach(e=>e.classList.remove('g-hover'));
 
         if(target){
             target.classList.add('g-hover');
             setLog('HOVER','#00f2ff');
-
             if(dwellEl!==target){ dwellEl=target; dwellStart=Date.now(); }
             else{
-                const prog = Math.min((Date.now()-dwellStart)/DWELL, 1);
+                const prog = Math.min((Date.now()-dwellStart)/DWELL,1);
                 const ring = target.querySelector('.d-ring');
                 if(ring){
                     ring.classList.add('active');
-                    const circ = ring.querySelector('circle');
+                    const circ=ring.querySelector('circle');
                     if(circ) circ.style.strokeDashoffset = 44-(44*prog);
                 }
                 if(Date.now()-dwellStart>=DWELL && Date.now()-lastAction>DWELL+50){
@@ -794,7 +811,10 @@ hands.onResults(results=>{
             }
         } else {
             dwellEl=null;
-            document.querySelectorAll('.d-ring').forEach(r=>{ r.classList.remove('active'); const c=r.querySelector('circle'); if(c) c.style.strokeDashoffset='44'; });
+            document.querySelectorAll('.d-ring').forEach(r=>{
+                r.classList.remove('active');
+                const c=r.querySelector('circle'); if(c) c.style.strokeDashoffset='44';
+            });
             setLog('IDLE','#94a3b8');
         }
     }
