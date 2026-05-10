@@ -1,871 +1,550 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NEURO-CORE v4.0 | Sterile Interface</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEURO-CORE v5.0 | Neural Diagnostic Interface</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@300;400;700;900&family=Rajdhani:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+:root {
+  --cyan: #00f2ff;
+  --cyan2: #00b4d8;
+  --violet: #7c3aed;
+  --bg: #03060f;
+  --bg2: #060d1f;
+  --glass: rgba(6,14,32,0.82);
+  --border: rgba(0,242,255,0.15);
+  --border-bright: rgba(0,242,255,0.5);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body { background: var(--bg); font-family: 'Rajdhani', sans-serif; color: #e2e8f0; }
 
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap');
+/* ═══ CANVAS LAYERS ═══ */
+#bg-canvas   { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+#sphere-canvas { position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: 0; transition: opacity 1.2s ease; }
+#sphere-canvas.active { opacity: 1; }
 
-        *, *::before, *::after { box-sizing: border-box; }
-        body { margin: 0; overflow: hidden; font-family: 'Rajdhani', sans-serif; background: #020617; }
-        #canvas-container { position: fixed; top: 0; left: 0; z-index: -1; width: 100%; height: 100%; }
+/* ═══ NORMAL UI (gesture OFF) ═══ */
+#normal-bg {
+  position: fixed; inset: 0; z-index: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(0,180,216,0.08) 0%, transparent 70%),
+              radial-gradient(ellipse 40% 40% at 90% 80%, rgba(124,58,237,0.06) 0%, transparent 60%),
+              var(--bg);
+  transition: opacity 0.8s ease;
+}
+#normal-bg.hidden-bg { opacity: 0; pointer-events: none; }
 
-        .glass-panel { background: rgba(15,23,42,0.75); backdrop-filter: blur(20px); border: 1px solid rgba(0,242,255,0.2); }
+/* Subtle grid overlay */
+#normal-bg::before {
+  content: ''; position: absolute; inset: 0;
+  background-image: linear-gradient(rgba(0,242,255,0.025) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(0,242,255,0.025) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
 
-        /* CURSOR */
-        #gesture-cursor {
-            position: fixed; top: 0; left: 0; width: 30px; height: 30px;
-            border: 2px solid #00f2ff; border-radius: 50%;
-            pointer-events: none; z-index: 9999; opacity: 0;
-            box-shadow: 0 0 15px #00f2ff;
-            transition: opacity .3s, box-shadow .15s, border-color .1s;
-            will-change: transform;
-        }
+/* ═══ GESTURE TOGGLE BTN ═══ */
+#gesture-toggle {
+  position: fixed; top: 22px; right: 28px; z-index: 1000;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px 10px 14px;
+  background: rgba(6,14,32,0.9);
+  border: 1px solid rgba(0,242,255,0.25);
+  border-radius: 50px;
+  cursor: pointer;
+  font-family: 'Orbitron'; font-size: 10px; letter-spacing: 0.15em;
+  color: rgba(0,242,255,0.6);
+  backdrop-filter: blur(16px);
+  transition: all 0.3s ease;
+  user-select: none;
+}
+#gesture-toggle:hover { border-color: rgba(0,242,255,0.5); color: var(--cyan); box-shadow: 0 0 20px rgba(0,242,255,0.15); }
+#gesture-toggle.active { border-color: var(--cyan); color: var(--cyan); box-shadow: 0 0 24px rgba(0,242,255,0.3); }
+.toggle-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: rgba(0,242,255,0.25);
+  transition: all 0.3s; flex-shrink: 0;
+}
+#gesture-toggle.active .toggle-dot { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); animation: pulse-dot 1.5s infinite; }
+@keyframes pulse-dot { 0%,100%{box-shadow:0 0 6px var(--cyan)} 50%{box-shadow:0 0 16px var(--cyan)} }
 
-        /* DRAG GHOST — floats under the hand during drag */
-        #drag-ghost {
-            position: fixed; z-index: 9990; pointer-events: none;
-            display: none; align-items: center; gap: 8px;
-            background: rgba(0,242,255,0.18);
-            border: 1.5px solid rgba(0,242,255,0.7);
-            border-radius: 8px; padding: 6px 10px;
-            backdrop-filter: blur(12px);
-            box-shadow: 0 0 20px rgba(0,242,255,0.35);
-            font-size: 10px; color: #00f2ff;
-            font-family: 'Orbitron'; letter-spacing: .08em;
-            white-space: nowrap; max-width: 200px;
-        }
-        #drag-ghost.active { display: flex; }
-        #drag-ghost img { width: 28px; height: 28px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+/* ═══ LEFT FOLDER PANEL ═══ */
+#folder-panel {
+  position: fixed; top: 0; left: 0; width: 258px; height: 100vh;
+  z-index: 500; display: flex; flex-direction: column;
+  padding: 18px 13px 13px;
+  background: rgba(3,7,18,0.92);
+  border-right: 1px solid var(--border);
+  backdrop-filter: blur(28px);
+  transition: transform 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.4s;
+}
+#folder-panel.panel-hidden { transform: translateX(-270px); opacity: 0.3; }
 
-        /* DROP ZONE highlight when dragging over it */
-        #drop-upload-zone.drag-over {
-            border-color: rgba(0,242,255,0.8) !important;
-            background: rgba(0,242,255,0.1) !important;
-            box-shadow: 0 0 30px rgba(0,242,255,0.35);
-        }
+.panel-title {
+  font-family: 'Orbitron'; font-size: 9px; letter-spacing: 0.22em;
+  color: var(--cyan); font-weight: 700;
+  padding-bottom: 10px; margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.panel-title::before { content:''; width:6px; height:6px; background:var(--cyan); border-radius:50%; box-shadow:0 0 6px var(--cyan); flex-shrink:0; }
 
-        /* File row grab cursor indicator */
-        .file-row { cursor: grab; }
-        .file-row.is-grabbed { opacity: 0.45; border-color: rgba(0,242,255,0.6) !important; }
+#folder-actions { display: flex; gap: 5px; margin-bottom: 10px; }
+.act-btn {
+  flex: 1; padding: 7px 2px; border-radius: 7px;
+  background: rgba(0,242,255,0.05); border: 1px solid rgba(0,242,255,0.18);
+  color: rgba(0,242,255,0.7); font-size: 8px; font-family: 'Orbitron';
+  cursor: pointer; text-align: center; transition: all .15s; line-height: 1.6;
+}
+.act-btn:hover, .act-btn.g-hover { background: rgba(0,242,255,0.15); border-color: rgba(0,242,255,0.5); color: var(--cyan); box-shadow: 0 0 10px rgba(0,242,255,0.15); }
 
-        /* LEFT PANEL */
-        #folder-panel {
-            position: fixed; top: 0; left: 0;
-            width: 252px; height: 100vh; z-index: 100;
-            display: flex; flex-direction: column;
-            padding: 16px 12px 12px;
-            background: rgba(4,10,28,0.93);
-            backdrop-filter: blur(24px);
-            border-right: 1px solid rgba(0,242,255,0.15);
-        }
-        .panel-title {
-            font-family: 'Orbitron', monospace; font-size: 9px;
-            letter-spacing: .18em; color: #00f2ff; font-weight: 700;
-            margin-bottom: 10px; padding-bottom: 8px;
-            border-bottom: 1px solid rgba(0,242,255,0.12);
-        }
+#folder-tree { flex: 1; overflow-y: auto; min-height: 0; padding-right: 2px; }
+#folder-tree::-webkit-scrollbar { width: 2px; }
+#folder-tree::-webkit-scrollbar-thumb { background: rgba(0,242,255,0.2); border-radius: 2px; }
 
-        /* ACTION BUTTONS */
-        #folder-actions { display: flex; gap: 5px; margin-bottom: 10px; }
-        .act-btn {
-            flex: 1; padding: 6px 2px; border-radius: 6px;
-            background: rgba(0,242,255,0.07); border: 1px solid rgba(0,242,255,0.2);
-            color: #00f2ff; font-size: 8px; font-family: 'Orbitron'; letter-spacing: .06em;
-            cursor: pointer; text-align: center; transition: all .15s;
-        }
-        .act-btn:hover, .act-btn.g-hover { background: rgba(0,242,255,0.18); box-shadow: 0 0 10px rgba(0,242,255,0.2); }
+.folder-row, .file-row {
+  display: flex; align-items: center; gap: 7px;
+  padding: 6px 8px; border-radius: 7px; cursor: pointer;
+  border: 1px solid transparent; user-select: none;
+  transition: all .14s; margin-bottom: 2px; position: relative;
+}
+.folder-row:hover, .folder-row.g-hover { background: rgba(0,242,255,0.07); border-color: rgba(0,242,255,0.22); }
+.folder-row.is-open { background: rgba(0,242,255,0.05); border-color: rgba(0,242,255,0.14); }
+.file-row { padding-left: 18px; margin-bottom: 1px; cursor: grab; }
+.file-row:hover, .file-row.g-hover { background: rgba(0,242,255,0.08); border-color: rgba(0,242,255,0.26); }
+.file-row.is-sel { background: rgba(0,242,255,0.14); border-color: rgba(0,242,255,0.45); box-shadow: 0 0 8px rgba(0,242,255,0.12); }
+.file-row.is-grabbed { opacity: 0.4; border-color: rgba(0,242,255,0.5) !important; }
 
-        /* TREE */
-        #folder-tree { flex: 1; overflow-y: auto; min-height: 0; }
-        #folder-tree::-webkit-scrollbar { width: 3px; }
-        #folder-tree::-webkit-scrollbar-thumb { background: rgba(0,242,255,0.2); border-radius: 3px; }
+.fa-chevron-right { font-size: 8px; color: rgba(0,242,255,0.4); transition: transform .16s; }
+.folder-row.is-open .fa-chevron-right { transform: rotate(90deg); }
+.fa-folder, .fa-folder-open { color: #f59e0b; font-size: 12px; }
+.row-label { font-size: 11px; color: rgba(200,230,255,0.85); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-badge { font-size: 8px; color: rgba(0,242,255,0.5); font-weight: 700; }
 
-        .folder-row, .file-row {
-            display: flex; align-items: center; gap: 7px;
-            padding: 6px 8px; border-radius: 7px; cursor: pointer;
-            border: 1px solid transparent; user-select: none;
-            transition: all .15s ease; margin-bottom: 2px; position: relative;
-        }
-        .folder-row:hover, .folder-row.g-hover { background: rgba(0,242,255,0.08); border-color: rgba(0,242,255,0.25); }
-        .folder-row.is-open { background: rgba(0,242,255,0.06); border-color: rgba(0,242,255,0.15); }
-        .file-row { padding-left: 20px; margin-bottom: 1px; }
-        .file-row:hover, .file-row.g-hover { background: rgba(0,242,255,0.09); border-color: rgba(0,242,255,0.28); }
-        .file-row.is-sel { background: rgba(0,242,255,0.17); border-color: rgba(0,242,255,0.5); box-shadow: 0 0 8px rgba(0,242,255,0.18); }
+.d-ring { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; display: none; }
+.d-ring.active { display: block; }
+.d-ring circle { fill: none; stroke: var(--cyan); stroke-width: 2.5; stroke-dasharray: 44; stroke-dashoffset: 44; transform: rotate(-90deg); transform-origin: center; transition: stroke-dashoffset .05s linear; }
 
-        .fa-chevron-right { font-size: 8px; color: rgba(0,242,255,0.45); transition: transform .18s; }
-        .folder-row.is-open .fa-chevron-right { transform: rotate(90deg); }
-        .fa-folder, .fa-folder-open { color: #f59e0b; font-size: 12px; }
-        .fa-file-medical { color: #38bdf8; font-size: 11px; }
-        .row-label { font-size: 11px; color: rgba(200,235,255,.88); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .row-badge { font-size: 8px; color: rgba(0,242,255,.55); font-weight: 700; }
+#sel-summary { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border); }
+.sum-label { font-size: 9px; font-family: 'Orbitron'; letter-spacing: .12em; color: rgba(0,242,255,.55); margin-bottom: 6px; }
+#sel-list { max-height: 80px; overflow-y: auto; }
+#sel-list::-webkit-scrollbar { width: 2px; }
+#sel-list::-webkit-scrollbar-thumb { background: rgba(0,242,255,0.18); border-radius: 2px; }
+.sel-chip { display: flex; align-items: center; justify-content: space-between; background: rgba(0,242,255,.08); border: 1px solid rgba(0,242,255,.2); border-radius: 5px; padding: 3px 7px; margin-bottom: 3px; font-size: 9px; color: rgba(200,240,255,.82); }
+.chip-x { color: rgba(255,80,80,.65); cursor: pointer; font-size: 10px; }
+.chip-x:hover { color: #ff4444; }
+#send-btn {
+  width: 100%; margin-top: 8px; padding: 8px 0;
+  background: linear-gradient(135deg, rgba(0,242,255,.1), rgba(0,100,200,.15));
+  border: 1px solid rgba(0,242,255,.35); border-radius: 7px;
+  color: var(--cyan); font-family: 'Orbitron'; font-size: 9px; letter-spacing: .1em;
+  cursor: pointer; display: none; transition: all .2s;
+}
+#send-btn:hover, #send-btn.g-hover { background: rgba(0,242,255,.18); box-shadow: 0 0 14px rgba(0,242,255,.25); }
 
-        /* dwell ring */
-        .d-ring { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; display: none; }
-        .d-ring.active { display: block; }
-        .d-ring circle { fill: none; stroke: #00f2ff; stroke-width: 2.5; stroke-dasharray: 44; stroke-dashoffset: 44; transform: rotate(-90deg); transform-origin: center; transition: stroke-dashoffset .05s linear; }
+/* ═══ MAIN CONTENT ═══ */
+#main-wrap {
+  position: relative; z-index: 10;
+  margin-left: 258px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  min-height: 100vh; padding: 32px 40px;
+  transition: margin-left 0.5s cubic-bezier(0.4,0,0.2,1);
+}
 
-        .children-wrap { display: none; }
-        .children-wrap.open { display: block; }
+/* Logo */
+.logo-wrap { text-align: center; margin-bottom: 48px; }
+.logo-text { font-family: 'Orbitron'; font-size: 72px; font-weight: 900; letter-spacing: -2px; line-height: 1; }
+.logo-text .nc { color: var(--cyan); text-shadow: 0 0 40px rgba(0,242,255,0.4); }
+.logo-text .rest { color: rgba(255,255,255,0.9); }
+.logo-sub {
+  font-family: 'Space Mono'; font-size: 10px; letter-spacing: 0.35em;
+  color: rgba(100,140,180,0.7); margin-top: 10px;
+}
+.logo-line { width: 120px; height: 1px; background: linear-gradient(90deg, transparent, var(--cyan), transparent); margin: 14px auto 0; }
 
-        /* SUMMARY */
-        #sel-summary { margin-top: auto; padding-top: 10px; border-top: 1px solid rgba(0,242,255,0.12); }
-        .sum-label { font-size: 9px; font-family: 'Orbitron'; letter-spacing: .12em; color: rgba(0,242,255,.6); margin-bottom: 6px; }
-        #sel-list { max-height: 80px; overflow-y: auto; }
-        #sel-list::-webkit-scrollbar { width: 3px; }
-        #sel-list::-webkit-scrollbar-thumb { background: rgba(0,242,255,0.2); border-radius: 3px; }
-        .sel-chip { display: flex; align-items: center; justify-content: space-between; background: rgba(0,242,255,.1); border: 1px solid rgba(0,242,255,.25); border-radius: 5px; padding: 3px 7px; margin-bottom: 3px; font-size: 9px; color: rgba(200,240,255,.85); }
-        .chip-x { color: rgba(255,80,80,.7); cursor: pointer; font-size: 10px; }
-        .chip-x:hover { color: #ff4444; }
-        #send-btn {
-            width: 100%; margin-top: 8px; padding: 8px 0;
-            background: linear-gradient(135deg, rgba(0,242,255,.15), rgba(0,100,180,.2));
-            border: 1px solid rgba(0,242,255,.4); border-radius: 7px;
-            color: #00f2ff; font-family: 'Orbitron'; font-size: 9px; letter-spacing: .1em;
-            cursor: pointer; display: none; transition: all .2s;
-        }
-        #send-btn:hover, #send-btn.g-hover { background: rgba(0,242,255,.22); box-shadow: 0 0 16px rgba(0,242,255,.28); }
+/* Cards grid */
+.cards-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; width: 100%; max-width: 860px; }
 
-        /* MAIN AREA */
-        #main-wrap { margin-left: 252px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 32px; }
+.nc-card {
+  background: rgba(6,14,32,0.8);
+  border: 1px solid rgba(0,242,255,0.14);
+  border-radius: 28px;
+  padding: 28px;
+  backdrop-filter: blur(20px);
+  display: flex; flex-direction: column;
+  transition: border-color 0.3s, box-shadow 0.3s;
+  position: relative; overflow: hidden;
+}
+.nc-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,242,255,0.3), transparent);
+}
+.nc-card:hover { border-color: rgba(0,242,255,0.28); box-shadow: 0 0 40px rgba(0,242,255,0.06); }
 
-        /* TOOLTIP */
-        #g-tooltip {
-            position: fixed; z-index: 9998; pointer-events: none;
-            background: rgba(4,10,28,.92); border: 1px solid rgba(0,242,255,.4);
-            border-radius: 6px; padding: 4px 11px; font-size: 10px;
-            color: #00f2ff; font-family: 'Orbitron'; letter-spacing: .1em;
-            opacity: 0; transition: opacity .2s; white-space: nowrap;
-        }
-        #g-tooltip.show { opacity: 1; }
+.card-tag {
+  font-family: 'Orbitron'; font-size: 9px; letter-spacing: 0.2em;
+  color: rgba(0,242,255,0.55); margin-bottom: 18px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.status-pill { font-size: 9px; padding: 2px 9px; border-radius: 4px; font-weight: 700; font-family: 'Orbitron'; letter-spacing: 0.08em; }
 
-        /* EXISTING */
-        .typewriter-text { border-right: .15em solid #00f2ff; white-space: nowrap; animation: blink-caret .75s step-end infinite; }
-        @keyframes blink-caret { from,to{border-color:transparent} 50%{border-color:#00f2ff;} }
-        .status-pill { font-size: 10px; padding: 2px 8px; border-radius: 4px; text-transform: uppercase; font-weight: bold; }
-        .neural-glow { box-shadow: 0 0 40px rgba(0,242,255,.3); border: 1px solid rgba(0,242,255,.5); }
+/* Drop zone */
+#drop-upload-zone {
+  flex: 1; min-height: 140px;
+  border: 1.5px dashed rgba(0,242,255,0.2);
+  border-radius: 18px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.2s; margin-bottom: 14px;
+  color: rgba(0,242,255,0.5);
+}
+#drop-upload-zone:hover { background: rgba(0,242,255,0.04); border-color: rgba(0,242,255,0.4); }
+#drop-upload-zone.drag-over { border-color: var(--cyan) !important; background: rgba(0,242,255,0.08) !important; box-shadow: 0 0 28px rgba(0,242,255,0.2); }
+.drop-icon { font-size: 28px; margin-bottom: 10px; color: rgba(0,242,255,0.4); }
+.drop-label { font-family: 'Orbitron'; font-size: 10px; letter-spacing: 0.15em; }
+.drop-sub { font-size: 10px; color: rgba(100,140,180,0.5); margin-top: 4px; }
 
-        /* TWO-FINGER SCROLL INDICATOR */
-        #scroll-indicator {
-            position: fixed; right: 28px; top: 50%; transform: translateY(-50%);
-            z-index: 9997; pointer-events: none; opacity: 0;
-            display: flex; flex-direction: column; align-items: center; gap: 6px;
-            transition: opacity .3s;
-        }
-        #scroll-indicator.visible { opacity: 1; }
-        .scroll-arrow {
-            width: 34px; height: 34px; border: 1.5px solid rgba(0,242,255,0.45);
-            border-radius: 50%; display: flex; align-items: center; justify-content: center;
-            font-size: 14px; color: rgba(0,242,255,0.7);
-            background: rgba(0,242,255,0.07);
-        }
-        .scroll-track {
-            width: 3px; height: 90px; background: rgba(0,242,255,0.1);
-            border-radius: 2px; position: relative; overflow: hidden;
-        }
-        .scroll-thumb {
-            width: 100%; background: rgba(0,242,255,0.55); border-radius: 2px;
-            position: absolute; top: 0; height: 30%; transition: top .12s linear;
-        }
-        #scroll-label {
-            font-size: 8px; font-family: 'Orbitron'; letter-spacing: .1em;
-            color: rgba(0,242,255,0.55); text-align: center; line-height: 1.5;
-        }
-        /* Second-hand cursor (amber) shown during 2-finger scroll */
-        #cursor2 {
-            position: fixed; top: 0; left: 0; width: 22px; height: 22px;
-            border: 2px solid #f59e0b; border-radius: 50%;
-            pointer-events: none; z-index: 9998; opacity: 0;
-            box-shadow: 0 0 12px #f59e0b; transition: opacity .25s;
-            will-change: transform;
-        }
-        /* Result modal — ensure proper scroll container */
-        #result-modal { scroll-behavior: auto; }
-    </style>
+#file-queue { overflow-y: auto; max-height: 120px; min-height: 32px; }
+#file-queue::-webkit-scrollbar { width: 2px; }
+#file-queue::-webkit-scrollbar-thumb { background: rgba(0,242,255,0.2); border-radius: 2px; }
+
+/* System log */
+.log-box {
+  background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.05);
+  border-radius: 14px; padding: 16px; font-family: 'Space Mono';
+  font-size: 10px; line-height: 1.9; color: rgba(180,200,220,0.75);
+}
+.log-box .k { color: rgba(0,242,255,0.7); }
+.log-box .v-cyan { color: var(--cyan); }
+.log-box .v-green { color: #4ade80; }
+.log-box .v-amber { color: #fbbf24; }
+.log-box .v-dim { color: rgba(100,140,180,0.55); }
+
+#process-btn {
+  display: none; width: 100%; margin-top: 20px;
+  padding: 15px 0;
+  background: linear-gradient(135deg, rgba(0,242,255,0.18), rgba(0,100,200,0.22));
+  border: 1px solid rgba(0,242,255,0.45);
+  border-radius: 14px;
+  color: var(--cyan); font-family: 'Orbitron'; font-size: 11px; letter-spacing: 0.18em;
+  cursor: pointer; transition: all 0.2s;
+  box-shadow: 0 0 24px rgba(0,242,255,0.12);
+}
+#process-btn:hover, #process-btn.g-hover { background: rgba(0,242,255,0.28); box-shadow: 0 0 40px rgba(0,242,255,0.3); transform: translateY(-1px); }
+
+/* ═══ GESTURE UI OVERLAYS (active when gesture ON) ═══ */
+#gesture-cursor {
+  position: fixed; top: 0; left: 0; width: 28px; height: 28px;
+  border: 2px solid var(--cyan); border-radius: 50%;
+  pointer-events: none; z-index: 9999; opacity: 0;
+  box-shadow: 0 0 12px var(--cyan);
+  transition: opacity 0.3s, box-shadow 0.12s, border-color 0.1s;
+  will-change: transform;
+}
+#cursor2 {
+  position: fixed; top: 0; left: 0; width: 20px; height: 20px;
+  border: 2px solid #f59e0b; border-radius: 50%;
+  pointer-events: none; z-index: 9998; opacity: 0;
+  box-shadow: 0 0 10px #f59e0b; transition: opacity 0.25s;
+  will-change: transform;
+}
+#drag-ghost {
+  position: fixed; z-index: 9990; pointer-events: none;
+  display: none; align-items: center; gap: 8px;
+  background: rgba(0,242,255,0.14); border: 1.5px solid rgba(0,242,255,0.65);
+  border-radius: 9px; padding: 6px 12px;
+  backdrop-filter: blur(12px); box-shadow: 0 0 20px rgba(0,242,255,0.3);
+  font-size: 10px; color: var(--cyan); font-family: 'Orbitron';
+  white-space: nowrap; max-width: 200px;
+}
+#drag-ghost.active { display: flex; }
+#drag-ghost img { width: 26px; height: 26px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+
+#g-tooltip {
+  position: fixed; z-index: 9998; pointer-events: none;
+  background: rgba(3,7,18,0.92); border: 1px solid rgba(0,242,255,0.38);
+  border-radius: 6px; padding: 4px 12px; font-size: 10px;
+  color: var(--cyan); font-family: 'Orbitron'; letter-spacing: .1em;
+  opacity: 0; transition: opacity .18s; white-space: nowrap;
+}
+#g-tooltip.show { opacity: 1; }
+
+/* Hand tracking guide lines overlay */
+#hand-skeleton {
+  position: fixed; inset: 0; z-index: 2; pointer-events: none; opacity: 0;
+  transition: opacity 0.5s;
+}
+#hand-skeleton.active { opacity: 1; }
+
+/* ═══ SCROLL INDICATOR ═══ */
+#scroll-indicator {
+  position: fixed; right: 24px; top: 50%; transform: translateY(-50%);
+  z-index: 997; pointer-events: none; opacity: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  transition: opacity .3s;
+}
+#scroll-indicator.visible { opacity: 1; }
+.scroll-arrow { width: 32px; height: 32px; border: 1px solid rgba(0,242,255,0.4); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; color: rgba(0,242,255,0.65); background: rgba(0,242,255,0.06); }
+.scroll-track { width: 3px; height: 80px; background: rgba(0,242,255,0.09); border-radius: 2px; position: relative; overflow: hidden; }
+.scroll-thumb { width: 100%; background: rgba(0,242,255,0.5); border-radius: 2px; position: absolute; top: 0; height: 30%; transition: top .1s linear; }
+#scroll-label { font-size: 8px; font-family: 'Orbitron'; letter-spacing: .1em; color: rgba(0,242,255,0.5); text-align: center; line-height: 1.5; }
+
+/* ═══ RESULT MODAL ═══ */
+#result-modal {
+  position: fixed; inset: 0; z-index: 800;
+  display: none; overflow-y: auto;
+  background: rgba(3,6,16,0.97);
+  backdrop-filter: blur(32px);
+  padding: 48px 32px;
+  scroll-behavior: auto;
+}
+#result-modal.open { display: block; }
+.result-close {
+  position: absolute; top: 28px; right: 32px;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(0,242,255,0.07); border: 1px solid rgba(0,242,255,0.25);
+  color: rgba(0,242,255,0.7); font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.2s;
+}
+.result-close:hover { background: rgba(0,242,255,0.15); color: var(--cyan); }
+
+.result-row {
+  display: flex; gap: 48px; align-items: center;
+  padding-bottom: 64px; border-bottom: 1px solid rgba(255,255,255,0.05);
+  margin-bottom: 64px; flex-wrap: wrap;
+}
+.scan-thumb {
+  position: relative; border-radius: 18px; overflow: hidden;
+  border: 1px solid rgba(0,242,255,0.15); cursor: pointer;
+  transition: all 0.3s; flex-shrink: 0;
+}
+.scan-thumb:hover { border-color: rgba(0,242,255,0.5); box-shadow: 0 0 24px rgba(0,242,255,0.2); transform: scale(1.02); }
+.scan-thumb img { width: 180px; height: 180px; object-fit: cover; display: block; }
+.scan-thumb .thumb-label {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,0.75));
+  font-size: 8px; font-family: 'Orbitron'; letter-spacing: 0.1em;
+  color: rgba(0,242,255,0.8); padding: 16px 8px 6px; text-align: center;
+}
+.scan-thumb .thumb-zoom {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0); transition: background 0.2s;
+  color: rgba(0,242,255,0); font-size: 22px;
+}
+.scan-thumb:hover .thumb-zoom { background: rgba(0,0,0,0.4); color: var(--cyan); }
+
+.typewriter-text { border-right: .15em solid var(--cyan); white-space: nowrap; animation: blink-caret .75s step-end infinite; }
+@keyframes blink-caret { from,to{border-color:transparent} 50%{border-color:var(--cyan)} }
+
+/* ═══ FULLSCREEN VIEWER with WATER ZOOM ═══ */
+#viewer-overlay {
+  position: fixed; inset: 0; z-index: 1200;
+  display: none; align-items: center; justify-content: center;
+  background: rgba(2,4,12,0.97);
+  backdrop-filter: blur(40px);
+}
+#viewer-overlay.open { display: flex; }
+#viewer-canvas-wrap {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 100%;
+}
+#viewer-canvas { display: block; max-width: 90vw; max-height: 85vh; border-radius: 18px; cursor: none; }
+#viewer-close {
+  position: absolute; top: 22px; right: 28px;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(0,242,255,0.08); border: 1px solid rgba(0,242,255,0.3);
+  color: rgba(0,242,255,0.8); font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 1201; transition: all 0.2s;
+}
+#viewer-close:hover { background: rgba(0,242,255,0.18); }
+#viewer-hint {
+  position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%);
+  font-family: 'Orbitron'; font-size: 9px; letter-spacing: 0.2em;
+  color: rgba(0,242,255,0.45); text-align: center; pointer-events: none;
+  display: flex; gap: 28px;
+}
+.viewer-hint-item { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.viewer-hint-icon { font-size: 18px; color: rgba(0,242,255,0.6); }
+#zoom-level-badge {
+  position: absolute; top: 22px; left: 50%; transform: translateX(-50%);
+  font-family: 'Orbitron'; font-size: 11px; letter-spacing: 0.15em;
+  color: rgba(0,242,255,0.6); background: rgba(3,7,18,0.8);
+  border: 1px solid rgba(0,242,255,0.2); border-radius: 20px;
+  padding: 5px 18px; pointer-events: none;
+}
+
+/* Grab-to-off counter badge */
+#grab-off-badge {
+  position: fixed; top: 72px; right: 28px; z-index: 1001;
+  font-family: 'Orbitron'; font-size: 9px; letter-spacing: 0.14em;
+  color: #f59e0b; background: rgba(3,7,18,0.9);
+  border: 1px solid rgba(245,158,11,0.4);
+  border-radius: 20px; padding: 5px 14px;
+  opacity: 0; transition: opacity 0.3s;
+  display: flex; align-items: center; gap: 8px;
+  pointer-events: none;
+}
+#grab-off-badge.show { opacity: 1; }
+.grab-pip { width: 8px; height: 8px; border-radius: 50%; background: rgba(245,158,11,0.25); border: 1px solid rgba(245,158,11,0.4); transition: all 0.2s; }
+.grab-pip.filled { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; border-color: #f59e0b; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+.fade-in { animation: fadeIn 0.6s ease forwards; }
+.fade-in-d1 { animation-delay: 0.1s; opacity: 0; }
+.fade-in-d2 { animation-delay: 0.22s; opacity: 0; }
+.fade-in-d3 { animation-delay: 0.34s; opacity: 0; }
+</style>
 </head>
-<body class="text-white">
 
-<div id="canvas-container"></div>
-<video id="webcam" class="hidden" autoplay playsinline></video>
-<div id="gesture-cursor"><div class="absolute inset-0 bg-cyan-400/20 rounded-full animate-ping"></div></div>
-<div id="g-tooltip"></div>
-<div id="drag-ghost"><img id="ghost-img" src=""><span id="ghost-label"></span></div>
+<body>
+<!-- Background layers -->
+<div id="normal-bg"></div>
+<canvas id="bg-canvas"></canvas>
+<canvas id="sphere-canvas" id="sphere-canvas"></canvas>
+<canvas id="hand-skeleton" style="position:fixed;inset:0;z-index:2;pointer-events:none;opacity:0;transition:opacity 0.5s;"></canvas>
 
-<!-- Second hand cursor (amber) for 2-finger scroll mode -->
+<video id="webcam" style="display:none" autoplay playsinline></video>
+
+<!-- Gesture UI elements -->
+<div id="gesture-cursor"><div style="position:absolute;inset:0;background:rgba(0,242,255,0.12);border-radius:50%;animation:ping 1.5s infinite;"></div></div>
 <div id="cursor2"></div>
+<div id="drag-ghost"><img id="ghost-img" src=""><span id="ghost-label"></span></div>
+<div id="g-tooltip"></div>
 
-<!-- Scroll indicator shown on right edge when result modal is open -->
+<style>@keyframes ping{0%{transform:scale(1);opacity:0.5}100%{transform:scale(2);opacity:0}}</style>
+
+<!-- Gesture Toggle Button -->
+<button id="gesture-toggle" onclick="toggleGesture()">
+  <div class="toggle-dot"></div>
+  <span id="toggle-label">GESTURE OFF</span>
+</button>
+
+<!-- Grab-to-off counter badge (shows when user does air grabs) -->
+<div id="grab-off-badge">
+  <span>GRAB×3 OFF</span>
+  <div class="grab-pip" id="pip1"></div>
+  <div class="grab-pip" id="pip2"></div>
+  <div class="grab-pip" id="pip3"></div>
+</div>
+
+<!-- Scroll Indicator -->
 <div id="scroll-indicator">
-    <div class="scroll-arrow">↑</div>
-    <div class="scroll-track"><div class="scroll-thumb" id="scroll-thumb"></div></div>
-    <div class="scroll-arrow">↓</div>
-    <div id="scroll-label">2 FINGER<br>SCROLL</div>
+  <div class="scroll-arrow">↑</div>
+  <div class="scroll-track"><div class="scroll-thumb" id="scroll-thumb"></div></div>
+  <div class="scroll-arrow">↓</div>
+  <div id="scroll-label">2 FINGER<br>SCROLL</div>
 </div>
 
-<!-- ═══════════════════════════════
-     LEFT PANEL — VIRTUAL FOLDER SPACE
-     ═══════════════════════════════ -->
+<!-- ═══ LEFT PANEL ═══ -->
 <div id="folder-panel">
-    <div class="panel-title">00_FOLDER_SPACE</div>
+  <div class="panel-title">00_FOLDER_SPACE</div>
 
-    <div id="folder-actions">
-        <button class="act-btn g-clickable" onclick="triggerFolder()"><i class="fas fa-folder-plus"></i><br>FOLDER</button>
-        <button class="act-btn g-clickable" onclick="triggerFiles()"><i class="fas fa-file-medical"></i><br>FILES</button>
-        <button class="act-btn g-clickable" onclick="selAll()"><i class="fas fa-check-double"></i><br>ALL</button>
-        <button class="act-btn g-clickable" onclick="clearAll()"><i class="fas fa-trash"></i><br>CLEAR</button>
+  <div id="folder-actions">
+    <button class="act-btn g-clickable" onclick="triggerFolder()"><i class="fas fa-folder-plus"></i><br>FOLDER</button>
+    <button class="act-btn g-clickable" onclick="triggerFiles()"><i class="fas fa-file-medical"></i><br>FILES</button>
+    <button class="act-btn g-clickable" onclick="selAll()"><i class="fas fa-check-double"></i><br>ALL</button>
+    <button class="act-btn g-clickable" onclick="clearAll()"><i class="fas fa-trash-alt"></i><br>CLEAR</button>
+  </div>
+
+  <input type="file" id="folderInput" webkitdirectory multiple accept="image/*" style="display:none" onchange="onFolderLoad(this.files)">
+  <input type="file" id="filesInput" multiple accept="image/*" style="display:none" onchange="onFilesLoad(this.files)">
+
+  <div id="folder-tree">
+    <div id="tree-empty" style="text-align:center;padding:32px 0;color:rgba(0,242,255,.28);font-size:10px;letter-spacing:.14em;line-height:2;">
+      <i class="fas fa-database" style="font-size:26px;display:block;margin-bottom:12px;opacity:.3;"></i>
+      NO DATA LOADED<br>
+      <span style="font-size:9px;opacity:.45;">Load folders or files above</span>
     </div>
+  </div>
 
-    <input type="file" id="folderInput" webkitdirectory multiple accept="image/*" class="hidden" onchange="onFolderLoad(this.files)">
-    <input type="file" id="filesInput" multiple accept="image/*" class="hidden" onchange="onFilesLoad(this.files)">
-
-    <div id="folder-tree">
-        <div id="tree-empty" style="text-align:center;padding:28px 0;color:rgba(0,242,255,.3);font-size:10px;letter-spacing:.14em;">
-            <i class="fas fa-database" style="font-size:24px;display:block;margin-bottom:10px;opacity:.35;"></i>
-            NO DATA LOADED<br>
-            <span style="font-size:9px;opacity:.5;">Load folders or files above</span>
-        </div>
-    </div>
-
-    <div id="sel-summary">
-        <div class="sum-label">SELECTED SCANS (<span id="sel-count">0</span>)</div>
-        <div id="sel-list"></div>
-        <button id="send-btn" class="g-clickable" onclick="sendToQueue()">
-            <i class="fas fa-arrow-circle-right"></i> SEND TO QUEUE
-        </button>
-    </div>
-</div>
-
-<!-- ═══════════════════════════════
-     MAIN CONTENT (unchanged from v3.4)
-     ═══════════════════════════════ -->
-<div id="main-wrap">
-    <div class="text-center mb-12">
-        <h1 class="text-6xl font-bold tracking-tighter italic text-cyan-400" style="font-family:'Orbitron';">
-            NEURO<span class="text-white">CORE</span>
-        </h1>
-        <p class="text-slate-500 tracking-[0.4em] uppercase text-[10px] mt-2">HCI STERILE DIAGNOSTIC INTERFACE v4.0</p>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-4xl w-full">
-        <!-- INPUT PANEL -->
-        <div class="glass-panel rounded-[40px] p-8 flex flex-col shadow-2xl">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-[10px] tracking-widest text-cyan-400 font-bold" style="font-family:'Orbitron';">01_INPUT_STREAM</h2>
-                <span id="sensor-stat" class="status-pill bg-red-500/20 text-red-500 border border-red-500/50">OFFLINE</span>
-            </div>
-            <div onclick="document.getElementById('fileElem').click()"
-                 class="flex-1 border-2 border-dashed border-cyan-500/20 rounded-3xl flex flex-col items-center justify-center hover:bg-cyan-500/5 transition-all cursor-pointer mb-4 g-clickable"
-                 id="drop-upload-zone">
-                <input type="file" id="fileElem" multiple accept="image/*" class="hidden" onchange="addToQueue(this.files)">
-                <i class="fas fa-microchip text-2xl text-cyan-500 mb-2"></i>
-                <p class="text-[10px] font-bold uppercase tracking-widest">Pinch to Upload</p>
-                <p class="text-[9px] text-slate-500 mt-1">or select from folder panel ←</p>
-            </div>
-            <div id="file-queue" class="overflow-y-auto pr-1" style="max-height:130px;min-height:36px;">
-                <p class="text-slate-600 italic text-[10px]">No data synced...</p>
-            </div>
-        </div>
-
-        <!-- SYSTEM LOG -->
-        <div class="glass-panel rounded-[40px] p-8 flex flex-col justify-between shadow-2xl">
-            <div>
-                <h2 class="text-[10px] tracking-widest text-cyan-400 font-bold mb-6" style="font-family:'Orbitron';">02_SYSTEM_LOG</h2>
-                <div class="bg-black/40 p-4 rounded-2xl border border-white/5 font-mono text-[10px] space-y-2 text-slate-300">
-                    <p>> Mode: <span class="text-cyan-400">STERILE_GESTURE</span></p>
-                    <p>> Reset: <span class="text-yellow-500 italic">SHOW FULL PALM (3s)</span></p>
-                    <p>> Select file: <span class="text-green-400">PINCH or HOVER 1.5s</span></p>
-                    <p>> XAI Module: <span class="text-green-500">GRAD-CAM_ENABLED</span></p>
-                    <p id="log-line">> Gesture: <span class="text-slate-500">IDLE</span></p>
-                </div>
-            </div>
-            <button onclick="processBatch()" id="process-btn"
-                    class="hidden g-clickable w-full bg-cyan-500 text-black font-black py-4 rounded-2xl shadow-[0_0_30px_rgba(0,242,255,0.3)] uppercase tracking-widest text-xs transform hover:scale-[1.02] transition-all">
-                Initialize Neural Sweep
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- RESULT MODAL (unchanged) -->
-<div id="result-modal" class="fixed inset-0 z-[200] hidden bg-slate-950/98 backdrop-blur-3xl overflow-y-auto p-12">
-    <button onclick="resultModal.classList.add('hidden'); hideScrollIndicator();"
-            class="absolute top-10 right-10 text-white/50 hover:text-white transition-all g-clickable">
-        <i class="fas fa-times text-3xl"></i>
+  <div id="sel-summary">
+    <div class="sum-label">SELECTED SCANS (<span id="sel-count">0</span>)</div>
+    <div id="sel-list"></div>
+    <button id="send-btn" class="g-clickable" onclick="sendToQueue()">
+      <i class="fas fa-arrow-circle-right"></i> SEND TO QUEUE
     </button>
-    <div id="result-content" class="max-w-5xl mx-auto space-y-24"></div>
+  </div>
 </div>
 
+<!-- ═══ MAIN CONTENT ═══ -->
+<div id="main-wrap">
+  <div class="logo-wrap fade-in">
+    <div class="logo-text"><span class="nc">NEURO</span><span class="rest">CORE</span></div>
+    <div class="logo-sub">STERILE NEURAL DIAGNOSTIC INTERFACE · v5.0</div>
+    <div class="logo-line"></div>
+  </div>
 
-<script>
-/* ═══════════════════════════════════════════
-   1. THREE.JS BACKGROUND (unchanged)
-══════════════════════════════════════════ */
-const scene = new THREE.Scene();
-const cam3 = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
-renderer.setSize(innerWidth, innerHeight);
-document.getElementById('canvas-container').appendChild(renderer.domElement);
-const pts = [];
-for(let i=0;i<3000;i++) pts.push(THREE.MathUtils.randFloatSpread(2000),THREE.MathUtils.randFloatSpread(2000),THREE.MathUtils.randFloatSpread(2000));
-const stars = new THREE.Points(
-    new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pts,3)),
-    new THREE.PointsMaterial({color:0x00f2ff, size:1.2})
-);
-scene.add(stars); cam3.position.z = 800;
-(function loop(){ requestAnimationFrame(loop); stars.rotation.y+=0.0006; renderer.render(scene,cam3); })();
+  <div class="cards-grid">
+    <!-- INPUT CARD -->
+    <div class="nc-card fade-in fade-in-d1">
+      <div class="card-tag">
+        <span>01_INPUT_STREAM</span>
+        <span id="sensor-stat" class="status-pill" style="background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.3);">OFFLINE</span>
+      </div>
+      <div id="drop-upload-zone" class="g-clickable" onclick="document.getElementById('fileElem').click()">
+        <input type="file" id="fileElem" multiple accept="image/*" style="display:none" onchange="addToQueue(this.files)">
+        <div class="drop-icon"><i class="fas fa-microchip"></i></div>
+        <div class="drop-label">PINCH TO UPLOAD</div>
+        <div class="drop-sub">or select from folder panel ←</div>
+      </div>
+      <div id="file-queue">
+        <p style="color:rgba(100,140,180,0.45);font-size:10px;font-style:italic;padding:4px 0;">No scans loaded...</p>
+      </div>
+    </div>
 
-
-/* ═══════════════════════════════════════════
-   2. FOLDER BROWSER DATA
-══════════════════════════════════════════ */
-let folders    = [];   // [{name, open, files:[{name,url,obj}]}]
-let looseFiles = [];   // [{name,url,obj}]
-let selected   = [];   // [{name,url,obj}]
-
-function triggerFolder(){ document.getElementById('folderInput').click(); }
-function triggerFiles() { document.getElementById('filesInput').click(); }
-
-function onFolderLoad(rawFiles){
-    const map = {};
-    let done = 0, total = rawFiles.length;
-    Array.from(rawFiles).forEach(f => {
-        const parts = f.webkitRelativePath.split('/');
-        const folder = parts.length > 1 ? parts[parts.length-2] : 'ROOT';
-        if(!map[folder]) map[folder] = [];
-        const reader = new FileReader();
-        reader.onload = e => {
-            map[folder].push({name:f.name, url:e.target.result, obj:f});
-            if(++done === total) buildFolders(map);
-        };
-        reader.readAsDataURL(f);
-    });
-}
-
-function buildFolders(map){
-    Object.entries(map).forEach(([name, files]) => {
-        const ex = folders.find(f=>f.name===name);
-        if(ex){ ex.files = ex.files.concat(files); }
-        else  { folders.push({name, open:false, files}); }
-    });
-    renderTree();
-}
-
-function onFilesLoad(rawFiles){
-    let done=0, total=rawFiles.length;
-    Array.from(rawFiles).forEach(f => {
-        const reader = new FileReader();
-        reader.onload = e => {
-            looseFiles.push({name:f.name, url:e.target.result, obj:f});
-            if(++done===total) renderTree();
-        };
-        reader.readAsDataURL(f);
-    });
-}
-
-function clearAll(){ folders=[]; looseFiles=[]; selected=[]; renderTree(); renderChips(); }
-
-function selAll(){
-    selected = [];
-    folders.forEach(fo => fo.files.forEach(f => selected.push(f)));
-    looseFiles.forEach(f => selected.push(f));
-    renderTree(); renderChips();
-}
-
-function toggleFile(pool, idx){
-    const file = pool[idx];
-    const si = selected.findIndex(s=>s.name===file.name && s.url===file.url);
-    if(si>=0) selected.splice(si,1); else selected.push(file);
-    renderTree(); renderChips();
-}
-
-function isSelected(file){ return selected.some(s=>s.name===file.name && s.url===file.url); }
-
-function getExt(name){ return (name.split('.').pop()||'').toUpperCase(); }
-
-function makeFileRow(file, pool, fi, fj){
-    const sel = isSelected(file);
-    const row = document.createElement('div');
-    row.className = 'file-row g-clickable' + (sel?' is-sel':'');
-    row.dataset.dragPool = pool;
-    row.dataset.dragFi   = fi;
-    if(fj !== undefined) row.dataset.dragFj = fj;
-    row.innerHTML = `
-        <img src="${file.url}" style="width:18px;height:18px;border-radius:3px;object-fit:cover;flex-shrink:0;border:1px solid rgba(0,242,255,.2);">
-        <span class="row-label">${file.name}</span>
-        <span class="row-badge">${getExt(file.name)}</span>
-        ${sel?'<i class="fas fa-check" style="color:#00f2ff;font-size:9px;margin-left:2px;"></i>':''}
-        <svg class="d-ring" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/></svg>`;
-    row.addEventListener('click', ()=>{ toggleFile(pool==='loose'?looseFiles:folders[fi].files, pool==='loose'?fi:fj); });
-    return row;
-}
-
-function renderTree(){
-    const tree = document.getElementById('folder-tree');
-    // Clear all children except tree-empty
-    while(tree.firstChild) tree.removeChild(tree.firstChild);
-
-    const hasContent = folders.length>0 || looseFiles.length>0;
-    if(!hasContent){
-        const emp = document.getElementById('tree-empty');
-        emp.style.display='block';
-        tree.appendChild(emp);
-        return;
-    }
-
-    // ── FOLDERS ──
-    folders.forEach((fo, fi) => {
-        // Folder header row
-        const folderRow = document.createElement('div');
-        folderRow.className = 'folder-row g-clickable' + (fo.open?' is-open':'');
-        folderRow.innerHTML = `
-            <i class="fas fa-chevron-right"></i>
-            <i class="fas fa-folder${fo.open?'-open':''}"></i>
-            <span class="row-label">${fo.name}</span>
-            <span class="row-badge">${fo.files.length}</span>
-            <svg class="d-ring" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7"/></svg>`;
-        folderRow.addEventListener('click', ()=>{ fo.open=!fo.open; renderTree(); });
-        tree.appendChild(folderRow);
-
-        // Children container — only rendered into DOM when open
-        if(fo.open){
-            const wrap = document.createElement('div');
-            wrap.className = 'children-wrap open';
-            fo.files.forEach((file, fj) => wrap.appendChild(makeFileRow(file,'folder',fi,fj)));
-            tree.appendChild(wrap);
-        }
-    });
-
-    // ── LOOSE FILES ──
-    if(looseFiles.length>0){
-        const header = document.createElement('div');
-        header.className = 'folder-row';
-        header.style.cssText='cursor:default;margin-top:6px;';
-        header.innerHTML=`<i class="fas fa-layer-group" style="color:#38bdf8;font-size:12px;"></i>
-            <span class="row-label" style="color:rgba(0,242,255,.6);">LOOSE FILES</span>
-            <span class="row-badge">${looseFiles.length}</span>`;
-        tree.appendChild(header);
-        looseFiles.forEach((file,fi)=> tree.appendChild(makeFileRow(file,'loose',fi,undefined)));
-    }
-}
-
-function renderChips(){
-    document.getElementById('sel-count').textContent = selected.length;
-    document.getElementById('send-btn').style.display = selected.length>0?'block':'none';
-    document.getElementById('sel-list').innerHTML = selected.map((f,i)=>`
-        <div class="sel-chip">
-            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:155px;">${f.name}</span>
-            <span class="chip-x" onclick="removeSel(${i})"><i class="fas fa-times"></i></span>
-        </div>`).join('');
-}
-
-function removeSel(i){ selected.splice(i,1); renderTree(); renderChips(); }
-
-function sendToQueue(){
-    if(!selected.length) return;
-    selected.forEach(f => addFileToQueue(f.obj, f.url));
-    showTip(`${selected.length} SCAN(S) → QUEUE`, 1800);
-}
-
-
-/* ═══════════════════════════════════════════
-   3. QUEUE (extended from v3.4)
-══════════════════════════════════════════ */
-let queue = [];
-
-function addToQueue(files){
-    Array.from(files).forEach(f => {
-        const r = new FileReader();
-        r.onload = e => addFileToQueue(f, e.target.result);
-        r.readAsDataURL(f);
-    });
-}
-function addFileToQueue(fileObj, url){
-    // Prevent exact duplicate (same name + size)
-    if(queue.find(q=>q.name===fileObj.name && q.size===fileObj.size)) return;
-
-    queue.push(fileObj);
-
-    const list = document.getElementById('file-queue');
-    // Remove the "no data" placeholder if present
-    const placeholder = list.querySelector('p.italic');
-    if(placeholder) placeholder.remove();
-
-    const item = document.createElement('div');
-    item.className = 'p-2 bg-white/5 border-l-2 border-cyan-500 flex items-center justify-between mb-1 rounded-r';
-    item.style.fontSize='9px';
-    item.innerHTML = `
-        <div class="flex items-center gap-2" style="overflow:hidden;">
-            <img src="${url}" style="width:16px;height:16px;border-radius:3px;object-fit:cover;flex-shrink:0;">
-            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${fileObj.name}</span>
+    <!-- SYSTEM LOG CARD -->
+    <div class="nc-card fade-in fade-in-d2" style="justify-content:space-between;">
+      <div>
+        <div class="card-tag">02_SYSTEM_LOG</div>
+        <div class="log-box">
+          <div><span class="k">&gt; mode:</span> <span class="v-cyan">STERILE_GESTURE</span></div>
+          <div><span class="k">&gt; reset:</span> <span class="v-amber">GRAB×3 IN AIR = OFF</span></div>
+          <div><span class="k">&gt; select:</span> <span class="v-green">PINCH or HOVER 1.4s</span></div>
+          <div><span class="k">&gt; scroll:</span> <span class="v-green">TWO HANDS · MODAL</span></div>
+          <div><span class="k">&gt; zoom:</span> <span class="v-cyan">PINCH IN VIEWER</span></div>
+          <div><span class="k">&gt; xai:</span> <span class="v-green">GRAD-CAM ENABLED</span></div>
+          <div><span class="k">&gt; state:</span> <span id="log-val" class="v-dim">IDLE</span></div>
         </div>
-        <span style="color:rgba(0,242,255,0.5);flex-shrink:0;margin-left:4px;">#${queue.length}</span>`;
-    list.appendChild(item);
+      </div>
+      <button id="process-btn" class="g-clickable" onclick="processBatch()">
+        ⬡ INITIALIZE NEURAL SWEEP
+      </button>
+    </div>
+  </div>
+</div>
 
-    document.getElementById('process-btn').classList.remove('hidden');
-}
+<!-- ═══ RESULT MODAL ═══ -->
+<div id="result-modal">
+  <div style="max-width:1100px;margin:0 auto;position:relative;">
+    <button class="result-close g-clickable" onclick="closeResultModal()"><i class="fas fa-times"></i></button>
+    <div style="font-family:'Orbitron';font-size:11px;letter-spacing:0.22em;color:rgba(0,242,255,0.5);margin-bottom:40px;">
+      03_DIAGNOSTIC_RESULTS — <span style="color:var(--cyan);" id="result-count">0 SCANS</span>
+    </div>
+    <div id="result-content"></div>
+  </div>
+</div>
 
+<!-- ═══ FULLSCREEN VIEWER ═══ -->
+<div id="viewer-overlay">
+  <div id="viewer-canvas-wrap">
+    <canvas id="viewer-canvas"></canvas>
+    <button id="viewer-close" onclick="closeViewer()"><i class="fas fa-times"></i></button>
+    <div id="zoom-level-badge">ZOOM 1.0×</div>
+    <div id="viewer-hint">
+      <div class="viewer-hint-item"><div class="viewer-hint-icon">🤏</div><div>PINCH CLOSE = ZOOM IN</div></div>
+      <div class="viewer-hint-item"><div class="viewer-hint-icon">✋</div><div>OPEN HAND = ZOOM OUT</div></div>
+      <div class="viewer-hint-item"><div class="viewer-hint-icon">👋</div><div>PALM 3s = CLOSE</div></div>
+    </div>
+  </div>
+</div>
 
-/* ═══════════════════════════════════════════
-   4. GESTURE ENGINE v4.2 — SMOOTH & ACCURATE
-   ✔ EMA smoothing on cursor (no jitter)
-   ✔ Velocity-based momentum scroll
-   ✔ Adaptive pinch hysteresis (no false fires)
-   ✔ Smoothed ghost drag position
-   ✔ Dead-zone filter (ignores micro-tremors)
-══════════════════════════════════════════ */
-const videoEl   = document.getElementById('webcam');
-const cursor    = document.getElementById('gesture-cursor');
-const sensorSt  = document.getElementById('sensor-stat');
-const tooltip   = document.getElementById('g-tooltip');
-const logLine   = document.getElementById('log-line').querySelector('span');
-const ghost     = document.getElementById('drag-ghost');
-const ghostImg  = document.getElementById('ghost-img');
-const ghostLbl  = document.getElementById('ghost-label');
-const dropZone  = document.getElementById('drop-upload-zone');
-
-// ── SMOOTHING CONSTANTS ──
-const ALPHA       = 0.18;   // EMA factor for cursor (lower = smoother, 0.1–0.25 ideal)
-const ALPHA_FAST  = 0.35;   // faster EMA for ghost drag (more responsive)
-const DEAD_ZONE   = 3;      // px — ignore movements smaller than this (tremor filter)
-const PINCH_CLOSE = 0.048;  // pinch closed threshold
-const PINCH_OPEN  = 0.085;  // pinch open threshold (hysteresis gap prevents bouncing)
-
-// ── SMOOTHED POSITIONS (EMA accumulators) ──
-let smX = -1, smY = -1;         // smoothed cursor position
-let smGX = -1, smGY = -1;       // smoothed ghost position
-let sm2X = -1, sm2Y = -1;       // smoothed second cursor
-
-// ── PINCH STATE ──
-let isPinching = false, lastAction = 0;
-let pinchConfirm = 0;            // consecutive frames pinch detected (prevents false fires)
-
-// ── DWELL STATE ──
-let dwellEl = null, dwellStart = 0;
-const DWELL = 1400;
-
-// ── DRAG STATE ──
-let dragMode = false, dragFile = null, dragSource = null;
-
-// ── SCROLL STATE ──
-let lastScrollY   = null;
-let scrollVel     = 0;           // momentum velocity
-let scrollRafId   = null;        // requestAnimationFrame id for momentum
-const SCROLL_MULT = 5.5;         // base scroll multiplier
-const FRICTION    = 0.88;        // momentum friction per frame (0.8–0.92)
-const resultModal = document.getElementById('result-modal');
-const cursor2El   = document.getElementById('cursor2');
-const scrollInd   = document.getElementById('scroll-indicator');
-const scrollThumb = document.getElementById('scroll-thumb');
-
-// ── EMA helper ──
-function ema(prev, next, a){ return prev < 0 ? next : prev + a*(next-prev); }
-
-function updateScrollThumb(){
-    const pct = resultModal.scrollTop / Math.max(1, resultModal.scrollHeight - resultModal.clientHeight);
-    scrollThumb.style.top = (pct * 68) + '%';
-}
-
-// Momentum scroll loop
-function momentumScroll(){
-    if(Math.abs(scrollVel) < 0.5){ scrollVel=0; return; }
-    resultModal.scrollTop += scrollVel;
-    scrollVel *= FRICTION;
-    updateScrollThumb();
-    scrollRafId = requestAnimationFrame(momentumScroll);
-}
-
-function stopMomentum(){ cancelAnimationFrame(scrollRafId); scrollVel=0; }
-
-function showScrollIndicator(){ scrollInd.classList.add('visible'); }
-function hideScrollIndicator(){ scrollInd.classList.remove('visible'); cursor2El.style.opacity='0'; }
-
-function showTip(msg, ms=1100){
-    tooltip.textContent=msg; tooltip.classList.add('show');
-    clearTimeout(showTip._t);
-    showTip._t=setTimeout(()=>tooltip.classList.remove('show'), ms);
-}
-function setLog(txt,col='#94a3b8'){ logLine.style.color=col; logLine.textContent=txt; }
-
-function showGhost(file, x, y){
-    ghostImg.src = file.url;
-    ghostLbl.textContent = file.name.length>22 ? file.name.substring(0,20)+'…' : file.name;
-    ghost.classList.add('active');
-    smGX=x; smGY=y;
-    ghost.style.left=(x+18)+'px'; ghost.style.top=(y-20)+'px';
-}
-function moveGhost(x, y){
-    smGX = ema(smGX, x, ALPHA_FAST);
-    smGY = ema(smGY, y, ALPHA_FAST);
-    ghost.style.left=(smGX+18)+'px'; ghost.style.top=(smGY-20)+'px';
-}
-function hideGhost(){ ghost.classList.remove('active'); smGX=-1; smGY=-1; }
-
-function overDropZone(x, y){
-    const r = dropZone.getBoundingClientRect();
-    return x>=r.left && x<=r.right && y>=r.top && y<=r.bottom;
-}
-function commitDrop(file){
-    dropZone.classList.add('drag-over');
-    setTimeout(()=>dropZone.classList.remove('drag-over'), 600);
-    addFileToQueue(file.obj, file.url);
-    showTip('DROP → QUEUED ✓', 1200);
-    setLog('DROPPED','#00ff88');
-}
-function cancelDrag(){
-    if(dragSource) dragSource.classList.remove('is-grabbed');
-    dragMode=false; dragFile=null; dragSource=null;
-    hideGhost(); dropZone.classList.remove('drag-over');
-}
-
-const hands = new Hands({ locateFile: f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
-hands.setOptions({ maxNumHands:2, modelComplexity:1, minDetectionConfidence:0.75, minTrackingConfidence:0.75 });
-
-hands.onResults(results=>{
-    const allHands = results.multiHandLandmarks || [];
-    const modalOpen = !resultModal.classList.contains('hidden');
-
-    // ══════════════════════════════════════
-    //  TWO-FINGER SCROLL — smooth momentum
-    // ══════════════════════════════════════
-    if(allHands.length === 2 && modalOpen){
-        stopMomentum();
-
-        const h0=allHands[0], h1=allHands[1];
-        const raw0x=(1-h0[8].x)*innerWidth, raw0y=h0[8].y*innerHeight;
-        const raw1x=(1-h1[8].x)*innerWidth, raw1y=h1[8].y*innerHeight;
-
-        // Smooth each cursor independently
-        smX  = ema(smX,  raw0x, ALPHA);
-        smY  = ema(smY,  raw0y, ALPHA);
-        sm2X = ema(sm2X, raw1x, ALPHA);
-        sm2Y = ema(sm2Y, raw1y, ALPHA);
-
-        cursor.style.opacity='1';
-        cursor.style.transform=`translate3d(${smX-15}px,${smY-15}px,0)`;
-        cursor.style.borderColor='#00f2ff'; cursor.style.boxShadow='0 0 15px #00f2ff';
-
-        cursor2El.style.opacity='1';
-        cursor2El.style.transform=`translate3d(${sm2X-11}px,${sm2Y-11}px,0)`;
-
-        const avgY = (smY + sm2Y) / 2;
-
-        if(lastScrollY !== null){
-            const rawDelta = (avgY - lastScrollY) * SCROLL_MULT;
-            // Dead-zone: ignore tiny tremors
-            if(Math.abs(rawDelta) > 0.8){
-                scrollVel = rawDelta;   // feed into momentum
-                resultModal.scrollTop += rawDelta;
-                updateScrollThumb();
-                setLog(rawDelta>0?'SCROLL ↓':'SCROLL ↑','#f59e0b');
-                showScrollIndicator();
-            }
-        }
-        lastScrollY = avgY;
-
-        sensorSt.innerText='2-HAND'; sensorSt.className='status-pill bg-yellow-500/20 text-yellow-400 border border-yellow-500/50';
-        return;
-    } else {
-        // Hand(s) left frame — apply momentum coast
-        if(lastScrollY !== null && Math.abs(scrollVel) > 1){
-            scrollRafId = requestAnimationFrame(momentumScroll);
-        }
-        lastScrollY = null;
-        sm2X=-1; sm2Y=-1;
-        cursor2El.style.opacity='0';
-        if(!modalOpen) hideScrollIndicator();
-    }
-
-    if(!allHands.length){
-        cursor.style.opacity='0';
-        sensorSt.innerText='OFFLINE'; sensorSt.className='status-pill bg-red-500/20 text-red-500 border border-red-500/50';
-        setLog('NO HAND','#ef4444'); dwellEl=null;
-        if(dragMode) cancelDrag();
-        smX=-1; smY=-1;
-        return;
-    }
-
-    // ── Single hand — apply EMA smoothing ──
-    const hand  = allHands[0];
-    const rawX  = (1-hand[8].x)*innerWidth;
-    const rawY  = hand[8].y*innerHeight;
-
-    smX = ema(smX, rawX, ALPHA);
-    smY = ema(smY, rawY, ALPHA);
-
-    // Dead-zone: only move cursor if moved more than DEAD_ZONE px
-    const dx = Math.abs(smX - rawX), dy = Math.abs(smY - rawY);
-    const x = smX, y = smY;
-
-    cursor.style.opacity='1';
-    cursor.style.transform=`translate3d(${x-15}px,${y-15}px,0)`;
-    tooltip.style.left=(x+22)+'px'; tooltip.style.top=(y-14)+'px';
-
-    sensorSt.innerText='ONLINE'; sensorSt.className='status-pill bg-green-500/20 text-green-500 border border-green-500/50 animate-pulse';
-
-    // ── PALM RESET ──
-    const palm = hand[8].y<hand[6].y && hand[12].y<hand[10].y && hand[16].y<hand[14].y && hand[20].y<hand[18].y;
-    if(palm && Date.now()-lastAction>3000){
-        if(dragMode) cancelDrag();
-        lastAction=Date.now(); sensorSt.innerText='RESETTING...';
-        setLog('PALM RESET','#f59e0b'); showTip('SYSTEM RESET',800);
-        cursor.style.boxShadow='0 0 50px #ffcc00';
-        setTimeout(()=>location.reload(),800); return;
-    }
-
-    // ── PINCH with hysteresis ──
-    const pinch = Math.hypot(hand[8].x-hand[4].x, hand[8].y-hand[4].y);
-    // Use separate thresholds to prevent rapid open/close bouncing
-    const isPinchClosed = pinch < PINCH_CLOSE;
-    const isPinchOpen   = pinch > PINCH_OPEN;
-
-    // ── DRAG MODE ──
-    if(dragMode){
-        if(!isPinchOpen){   // still holding (closed or mid-range)
-            moveGhost(x, y);
-            cursor.style.borderColor='#f59e0b'; cursor.style.boxShadow='0 0 25px #f59e0b';
-            setLog('DRAGGING','#f59e0b');
-            if(overDropZone(x,y)){
-                dropZone.classList.add('drag-over');
-                showTip('RELEASE TO DROP',400);
-            } else {
-                dropZone.classList.remove('drag-over');
-            }
-        } else {            // released
-            if(overDropZone(x,y)) commitDrop(dragFile);
-            else { showTip('DRAG CANCELLED',900); setLog('IDLE','#94a3b8'); }
-            cancelDrag(); lastAction=Date.now();
-        }
-        return;
-    }
-
-    // ── PINCH CLICK / GRAB ──
-    if(isPinchClosed){
-        cursor.style.borderColor='#bc13fe'; cursor.style.boxShadow='0 0 25px #bc13fe';
-        setLog('PINCH','#bc13fe');
-        pinchConfirm++;
-
-        // Require 2 consecutive pinch frames before firing (prevents accidental triggers)
-        if(pinchConfirm >= 2 && !isPinching && Date.now()-lastAction>650){
-            isPinching=true; lastAction=Date.now(); dwellEl=null;
-            const el = document.elementFromPoint(x,y);
-            if(el){
-                const fileRow = el.closest('.file-row[data-drag-pool]');
-                if(fileRow){
-                    const pool = fileRow.dataset.dragPool;
-                    const fi   = parseInt(fileRow.dataset.dragFi);
-                    const fj   = fileRow.dataset.dragFj!==undefined && fileRow.dataset.dragFj!=='' ? parseInt(fileRow.dataset.dragFj) : null;
-                    let file   = null;
-                    if(pool==='folder' && fj!==null && folders[fi]) file=folders[fi].files[fj];
-                    else if(pool==='loose') file=looseFiles[fi];
-                    if(file){
-                        dragMode=true; dragFile=file; dragSource=fileRow;
-                        fileRow.classList.add('is-grabbed');
-                        showGhost(file, x, y);
-                        setLog('GRABBED','#f59e0b');
-                        showTip('DRAG TO DROP ZONE',1000);
-                    }
-                } else {
-                    const clickable = el.closest('.g-clickable, button, [onclick]');
-                    if(clickable){ clickable.click(); showTip('PINCH SELECT',700); }
-                }
-            }
-        }
-    } else {
-        pinchConfirm = 0;
-        if(isPinchOpen){
-            isPinching=false;
-            cursor.style.borderColor='#00f2ff'; cursor.style.boxShadow='0 0 15px #00f2ff';
-        }
-    }
-
-    // ── DWELL HOVER ──
-    if(isPinchOpen && !dragMode){
-        const el = document.elementFromPoint(x,y);
-        const target = el ? el.closest('.g-clickable') : null;
-        document.querySelectorAll('.g-hover').forEach(e=>e.classList.remove('g-hover'));
-
-        if(target){
-            target.classList.add('g-hover');
-            setLog('HOVER','#00f2ff');
-            if(dwellEl!==target){ dwellEl=target; dwellStart=Date.now(); }
-            else{
-                const prog = Math.min((Date.now()-dwellStart)/DWELL,1);
-                const ring = target.querySelector('.d-ring');
-                if(ring){
-                    ring.classList.add('active');
-                    const circ=ring.querySelector('circle');
-                    if(circ) circ.style.strokeDashoffset = 44-(44*prog);
-                }
-                if(Date.now()-dwellStart>=DWELL && Date.now()-lastAction>DWELL+50){
-                    lastAction=Date.now(); dwellEl=null;
-                    target.click(); showTip('DWELL ✓',700); setLog('DWELL CLICK','#00ff88');
-                }
-            }
-        } else {
-            dwellEl=null;
-            document.querySelectorAll('.d-ring').forEach(r=>{
-                r.classList.remove('active');
-                const c=r.querySelector('circle'); if(c) c.style.strokeDashoffset='44';
-            });
-            setLog('IDLE','#94a3b8');
-        }
-    }
-});
-
-new Camera(videoEl,{ onFrame: async()=>await hands.send({image:videoEl}), width:640, height:480 }).start();
-
-
-/* ═══════════════════════════════════════════
-   5. PROCESS + TYPEWRITER (unchanged from v3.4)
-══════════════════════════════════════════ */
-function typeWriterEffect(id, text, speed=100){
-    let i=0; const el=document.getElementById(id);
-    (function t(){ if(i<text.length){ el.innerHTML+=text.charAt(i++); setTimeout(t,speed); } })();
-}
-
-async function processBatch(){
-    const area=document.getElementById('result-content');
-    resultModal.classList.remove('hidden');
-    resultModal.scrollTop = 0;
-    showScrollIndicator();
-    updateScrollThumb();
-    area.innerHTML="<div class='text-center py-20 animate-pulse'><p class='text-cyan-400 tracking-[0.5em] text-2xl font-black uppercase'>Mapping Feature Activation...</p></div>";
-    for(let i=0;i<queue.length;i++){
-        const fd=new FormData(); fd.append('file',queue[i]);
-        try{
-            const r=await fetch("http://127.0.0.1:8000/predict",{method:'POST',body:fd});
-            const d=await r.json();
-            const rid=`res-${i}`;
-            const row=`<div class="flex flex-col lg:flex-row gap-12 items-center border-b border-white/5 pb-16">
-                <div class="flex gap-4">
-                    <div class="text-center"><p class="text-[9px] text-slate-500 mb-2 uppercase font-bold">01_INPUT</p>
-                        <img src="${URL.createObjectURL(queue[i])}" class="w-48 h-48 rounded-2xl border border-white/10 shadow-xl object-cover grayscale"></div>
-                    <div class="text-center"><p class="text-[9px] text-cyan-500 mb-2 uppercase font-bold">02_GRAD_CAM</p>
-                        <img src="data:image/jpeg;base64,${d.heatmap}" class="w-48 h-48 rounded-2xl neural-glow object-cover border border-cyan-500/30"></div>
-                </div>
-                <div class="flex-1">
-                    <h3 id="${rid}" class="text-6xl font-bold italic typewriter-text text-white tracking-tighter"></h3>
-                    <div class="mt-4 flex items-center gap-6">
-                        <div class="px-6 py-2 bg-cyan-500 text-black font-black text-xl rounded-lg">${d.confidence}% CERTAINTY</div>
-                        <p class="text-slate-400 text-[10px] max-w-[180px] leading-tight uppercase font-medium">Neural activation maps indicate morphological abnormalities verified by CAM.</p>
-                    </div>
-                </div></div>`;
-            if(i===0) area.innerHTML='';
-            area.insertAdjacentHTML('beforeend',row);
-            typeWriterEffect(rid, d.tumor_type);
-        } catch(e){
-            area.innerHTML=`<p class="text-red-500 text-center py-10 font-mono">FastAPI OFFLINE — No response from 127.0.0.1:8000</p>`;
-        }
-    }
-}
-</script>
+<script src="script.js"></script>
 </body>
 </html>
