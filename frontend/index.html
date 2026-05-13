@@ -85,7 +85,21 @@ body { background: var(--bg); font-family: 'Rajdhani', sans-serif; color: #e2e8f
   transition: transform 0.5s cubic-bezier(0.4,0,0.2,1), opacity 0.4s;
 }
 #folder-panel.panel-hidden { transform: translateX(-270px); opacity: 0.3; }
-
+/* Model select hover + focus */
+#model-select:hover {
+  border-color: rgba(0,242,255,0.5);
+  box-shadow: 0 0 14px rgba(0,242,255,0.12);
+}
+#model-select:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 20px rgba(0,242,255,0.2);
+}
+#model-select option {
+  background: #060d1f;
+  color: rgba(0,242,255,0.85);
+  font-family: 'Orbitron';
+  padding: 8px;
+}
 .panel-title {
   font-family: 'Orbitron'; font-size: 9px; letter-spacing: 0.22em;
   color: var(--cyan); font-weight: 700;
@@ -113,6 +127,27 @@ body { background: var(--bg); font-family: 'Rajdhani', sans-serif; color: #e2e8f
   padding: 6px 8px; border-radius: 7px; cursor: pointer;
   border: 1px solid transparent; user-select: none;
   transition: all .14s; margin-bottom: 2px; position: relative;
+}
+/* Model option hover */
+.model-opt:hover,
+.model-opt.g-hover {
+  background: rgba(0,242,255,0.12) !important;
+  color: var(--cyan) !important;
+}
+.model-opt.is-active {
+  background: rgba(0,242,255,0.1) !important;
+  border-left: 2px solid var(--cyan) !important;
+  color: var(--cyan) !important;
+}
+#model-trigger:hover,
+#model-trigger.g-hover {
+  border-color: rgba(0,242,255,0.55) !important;
+  box-shadow: 0 0 16px rgba(0,242,255,0.15) !important;
+  color: var(--cyan) !important;
+}
+#model-options.open {
+  display: block !important;
+  animation: fadeIn 0.18s ease;
 }
 .folder-row:hover, .folder-row.g-hover { background: rgba(0,242,255,0.07); border-color: rgba(0,242,255,0.22); }
 .folder-row.is-open { background: rgba(0,242,255,0.05); border-color: rgba(0,242,255,0.14); }
@@ -512,6 +547,112 @@ body { background: var(--bg); font-family: 'Rajdhani', sans-serif; color: #e2e8f
           <div><span class="k">&gt; xai:</span> <span class="v-green">GRAD-CAM ENABLED</span></div>
           <div><span class="k">&gt; state:</span> <span id="log-val" class="v-dim">IDLE</span></div>
         </div>
+        <!-- ▼▼▼ REPLACE MODEL SELECTOR HTML ▼▼▼ -->
+<div style="margin-top: 16px;">
+  <div style="font-family:'Orbitron';font-size:9px;letter-spacing:0.18em;
+              color:rgba(0,242,255,0.55);margin-bottom:8px;">
+    04_MODEL_SELECT
+  </div>
+
+  <!-- Custom dropdown trigger button -->
+  <div id="model-dropdown-wrap" style="position:relative;">
+
+    <button id="model-trigger"
+            class="g-clickable"
+            onclick="toggleModelDropdown()"
+            style="
+              width:100%;
+              padding:10px 36px 10px 14px;
+              background:rgba(6,14,32,0.9);
+              border:1px solid rgba(0,242,255,0.28);
+              border-radius:10px;
+              color:rgba(0,242,255,0.85);
+              font-family:'Orbitron';
+              font-size:9px;
+              letter-spacing:0.12em;
+              cursor:pointer;
+              outline:none;
+              text-align:left;
+              transition:all 0.2s;
+              position:relative;
+            ">
+      <span id="model-trigger-label">⬡ CUSTOM CNN — 92.00% TEST ACC</span>
+      <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);
+                   color:rgba(0,242,255,0.5);font-size:10px;"
+            id="model-arrow">▾</span>
+    </button>
+
+    <!-- Dropdown options panel -->
+    <div id="model-options"
+         style="
+           display:none;
+           position:absolute;
+           top:calc(100% + 6px);
+           left:0; right:0;
+           background:rgba(3,7,18,0.97);
+           border:1px solid rgba(0,242,255,0.35);
+           border-radius:10px;
+           overflow:hidden;
+           z-index:600;
+           box-shadow:0 8px 32px rgba(0,0,0,0.6);
+         ">
+
+      <button class="model-opt g-clickable"
+              data-key="cnn"
+              onclick="selectModel('cnn')"
+              style="
+                width:100%;padding:12px 14px;
+                background:rgba(0,242,255,0.1);
+                border:none;border-bottom:1px solid rgba(0,242,255,0.1);
+                color:rgba(0,242,255,0.9);
+                font-family:'Orbitron';font-size:9px;letter-spacing:0.1em;
+                text-align:left;cursor:pointer;transition:all 0.15s;
+              ">
+        <div>⬡ CUSTOM CNN</div>
+        <div style="font-size:8px;color:rgba(0,242,255,0.45);
+                    margin-top:3px;font-family:'Space Mono';">
+          Test: 92.00% · Val: 96.70% · 8.8M params
+        </div>
+      </button>
+
+      <button class="model-opt g-clickable"
+              data-key="resnet18"
+              onclick="selectModel('resnet18')"
+              style="
+                width:100%;padding:12px 14px;
+                background:transparent;
+                border:none;
+                color:rgba(0,242,255,0.7);
+                font-family:'Orbitron';font-size:9px;letter-spacing:0.1em;
+                text-align:left;cursor:pointer;transition:all 0.15s;
+              ">
+        <div>⬡ RESNET18 PRETRAINED</div>
+        <div style="font-size:8px;color:rgba(0,242,255,0.45);
+                    margin-top:3px;font-family:'Space Mono';">
+          Test: 94.81% · Val: 97.32% · 11.7M params
+        </div>
+      </button>
+
+    </div>
+  </div>
+
+  <!-- Info badge -->
+  <div id="model-badge"
+       style="
+         margin-top:8px;padding:7px 12px;
+         background:rgba(0,242,255,0.05);
+         border:1px solid rgba(0,242,255,0.15);
+         border-radius:8px;
+         font-family:'Space Mono';font-size:9px;
+         color:rgba(100,140,180,0.65);line-height:1.7;
+       ">
+    <span style="color:rgba(0,242,255,0.5);">&gt; arch:</span> 4-block CNN + BatchNorm<br>
+    <span style="color:rgba(0,242,255,0.5);">&gt; params:</span> ~8.8M trainable<br>
+    <span style="color:rgba(0,242,255,0.5);">&gt; val_acc:</span>
+    <span style="color:#4ade80;">96.70%</span>
+  </div>
+</div>
+<!-- ▲▲▲ END MODEL SELECTOR ▲▲▲ -->
       </div>
       <button id="process-btn" class="g-clickable" onclick="processBatch()">
         ⬡ INITIALIZE NEURAL SWEEP

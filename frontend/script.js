@@ -824,12 +824,12 @@ viewerCanvas.addEventListener('click',e=>{
   addRipple(e.clientX-r.left,e.clientY-r.top,350);
 });
 
-
 /* ════════════════════════════════════════════════════
    H. PROCESS + TYPEWRITER + RESULT MODAL
 ════════════════════════════════════════════════════ */
-function typeWriterEffect(id,text,speed=90){
-  let i=0; const el=document.getElementById(id);
+function typeWriterEffect(id, text, speed=90){
+  let i=0;
+  const el=document.getElementById(id);
   (function t(){ if(i<text.length){ el.innerHTML+=text.charAt(i++); setTimeout(t,speed); } })();
 }
 
@@ -838,70 +838,372 @@ function closeResultModal(){
   hideScrollIndicator();
 }
 
+// Tumor type → color mapping
+const TUMOR_COLORS = {
+  'Glioma'     : '#f87171',   // red
+  'Meningioma' : '#fbbf24',   // amber
+  'Pituitary'  : '#a78bfa',   // violet
+  'No Tumor'   : '#4ade80',   // green
+};
+
+// Confidence → severity label
+function getSeverityLabel(tumorType, confidence){
+  if(tumorType==='No Tumor') return { label:'CLEAR', color:'#4ade80' };
+  if(confidence>=90)         return { label:'HIGH CERTAINTY', color:'#f87171' };
+  if(confidence>=75)         return { label:'MODERATE', color:'#fbbf24' };
+  return                            { label:'LOW CERTAINTY', color:'#94a3b8' };
+}
+
 async function processBatch(){
+  if(!queue.length){
+    showTip('NO SCANS IN QUEUE', 1400);
+    return;
+  }
+
   const area=document.getElementById('result-content');
   resultModal.classList.add('open');
   resultModal.scrollTop=0;
-  showScrollIndicator(); updateScrollThumb();
-  area.innerHTML=`<div style="text-align:center;padding:80px 0;">
-    <div style="font-family:'Orbitron';font-size:14px;letter-spacing:0.4em;color:rgba(0,242,255,0.6);animation:fadeIn 0.8s ease;">MAPPING NEURAL ACTIVATION...</div>
-    <div style="margin-top:20px;width:200px;height:2px;background:rgba(0,242,255,0.1);margin-left:auto;margin-right:auto;border-radius:1px;overflow:hidden;">
-      <div style="width:40%;height:100%;background:var(--cyan);animation:slide 1.2s ease infinite;"></div>
-    </div>
-    <style>@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(350%)}}</style>
-  </div>`;
+  showScrollIndicator();
+  updateScrollThumb();
+
+  // ── Loading screen ──
+  area.innerHTML=`
+    <div style="text-align:center;padding:80px 0;">
+      <div style="font-family:'Orbitron';font-size:14px;letter-spacing:0.4em;
+                  color:rgba(0,242,255,0.6);animation:fadeIn 0.8s ease;">
+        MAPPING NEURAL ACTIVATION...
+      </div>
+      <div style="margin-top:10px;font-family:'Space Mono';font-size:10px;
+                  color:rgba(0,242,255,0.35);letter-spacing:0.12em;">
+        MODEL: ${selectedModel.toUpperCase()}
+      </div>
+      <div style="margin-top:20px;width:200px;height:2px;
+                  background:rgba(0,242,255,0.1);
+                  margin-left:auto;margin-right:auto;
+                  border-radius:1px;overflow:hidden;">
+        <div style="width:40%;height:100%;background:var(--cyan);
+                    animation:slide 1.2s ease infinite;"></div>
+      </div>
+      <style>
+        @keyframes slide{
+          0%  { transform:translateX(-100%) }
+          100%{ transform:translateX(350%)  }
+        }
+      </style>
+    </div>`;
 
   let loadedCount=0;
-  for(let i=0;i<queue.length;i++){
-    const fd=new FormData(); fd.append('file',queue[i]);
+
+  for(let i=0; i<queue.length; i++){
+    const fd=new FormData();
+    fd.append('file', queue[i]);
+
     try{
-      const r=await fetch("http://127.0.0.1:8000/predict",{method:'POST',body:fd});
+      // ── API call with selected model ──
+      const r=await fetch(
+        `http://127.0.0.1:8000/predict?model_key=${selectedModel}`,
+        { method:'POST', body:fd }
+      );
+
+      if(!r.ok){
+        const err=await r.json();
+        throw new Error(err.detail || `HTTP ${r.status}`);
+      }
+
       const d=await r.json();
-      const rid=`res-${i}`, iid=`img-input-${i}`, hid=`img-heatmap-${i}`;
+
       if(loadedCount===0) area.innerHTML='';
       loadedCount++;
+
       document.getElementById('result-count').textContent=`${loadedCount} SCAN(S)`;
-      const objUrl=URL.createObjectURL(queue[i]);
-      const heatmapSrc=`data:image/jpeg;base64,${d.heatmap}`;
+      setLog(`PROCESSED ${loadedCount}/${queue.length}`, '#4ade80');
+
+      const objUrl     = URL.createObjectURL(queue[i]);
+      const heatmapSrc = `data:image/jpeg;base64,${d.heatmap}`;
+      const rid        = `res-${i}`;
+      const tumorColor = TUMOR_COLORS[d.tumor_type] || 'var(--cyan)';
+      const severity   = getSeverityLabel(d.tumor_type, d.confidence);
+
+      // All-scores bar HTML
+      const scoresHtml = Object.entries(d.all_scores||{}).map(([name, pct])=>`
+        <div style="margin-bottom:6px;">
+          <div style="display:flex;justify-content:space-between;
+                      font-family:'Space Mono';font-size:9px;
+                      color:rgba(180,200,220,0.7);margin-bottom:3px;">
+            <span>${name}</span><span>${pct}%</span>
+          </div>
+          <div style="height:3px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;
+                        background:${TUMOR_COLORS[name]||'var(--cyan)'};
+                        border-radius:2px;transition:width 0.8s ease;"></div>
+          </div>
+        </div>`).join('');
+
       const row=document.createElement('div');
-      row.className='result-row';
+      row.className='result-row fade-in';
       row.innerHTML=`
+        <!-- ── Images ── -->
         <div style="display:flex;gap:16px;flex-shrink:0;">
+
           <div style="text-align:center;">
-            <div style="font-family:'Orbitron';font-size:8px;letter-spacing:0.15em;color:rgba(100,140,180,0.6);margin-bottom:8px;">01_INPUT</div>
+            <div style="font-family:'Orbitron';font-size:8px;letter-spacing:0.15em;
+                        color:rgba(100,140,180,0.6);margin-bottom:8px;">01_INPUT</div>
             <div class="scan-thumb" onclick="openViewer('${objUrl}')">
-              <img src="${objUrl}" style="width:180px;height:180px;object-fit:cover;filter:grayscale(0.4);">
+              <img src="${objUrl}"
+                   style="width:180px;height:180px;object-fit:cover;filter:grayscale(0.4);">
               <div class="thumb-label">INPUT SCAN</div>
               <div class="thumb-zoom"><i class="fas fa-expand-alt"></i></div>
             </div>
           </div>
+
           <div style="text-align:center;">
-            <div style="font-family:'Orbitron';font-size:8px;letter-spacing:0.15em;color:rgba(0,242,255,0.6);margin-bottom:8px;">02_GRAD_CAM</div>
+            <div style="font-family:'Orbitron';font-size:8px;letter-spacing:0.15em;
+                        color:rgba(0,242,255,0.6);margin-bottom:8px;">02_GRAD_CAM</div>
             <div class="scan-thumb" onclick="openViewer('${heatmapSrc}')">
-              <img src="${heatmapSrc}" style="width:180px;height:180px;object-fit:cover;">
+              <img src="${heatmapSrc}"
+                   style="width:180px;height:180px;object-fit:cover;">
               <div class="thumb-label">ACTIVATION MAP</div>
-              <div class="thumb-zoom" style="color:rgba(0,242,255,0)"><i class="fas fa-expand-alt"></i></div>
+              <div class="thumb-zoom"><i class="fas fa-expand-alt"></i></div>
             </div>
           </div>
+
         </div>
+
+        <!-- ── Result data ── -->
         <div style="flex:1;min-width:0;">
-          <h3 id="${rid}" style="font-family:'Orbitron';font-size:48px;font-weight:900;color:#fff;line-height:1;letter-spacing:-1px;margin-bottom:20px;" class="typewriter-text"></h3>
-          <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-            <div style="padding:12px 24px;background:rgba(0,242,255,0.12);border:1px solid rgba(0,242,255,0.4);border-radius:10px;font-family:'Orbitron';font-size:18px;color:var(--cyan);">${d.confidence}%</div>
-            <div style="font-size:10px;color:rgba(100,140,180,0.7);font-family:'Space Mono';line-height:1.6;max-width:200px;">CERTAINTY INDEX<br>GRAD-CAM VERIFIED<br>MORPHOLOGICAL SCAN</div>
+
+          <!-- Tumor type typewriter -->
+          <h3 id="${rid}"
+              style="font-family:'Orbitron';font-size:48px;font-weight:900;
+                     color:${tumorColor};line-height:1;letter-spacing:-1px;
+                     margin-bottom:12px;text-shadow:0 0 30px ${tumorColor}55;"
+              class="typewriter-text"></h3>
+
+          <!-- Severity + model tag -->
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:18px;flex-wrap:wrap;">
+            <span style="font-family:'Orbitron';font-size:9px;letter-spacing:0.14em;
+                         padding:4px 12px;border-radius:5px;
+                         background:${severity.color}18;
+                         border:1px solid ${severity.color}55;
+                         color:${severity.color};">
+              ${severity.label}
+            </span>
+            <span style="font-family:'Orbitron';font-size:9px;letter-spacing:0.12em;
+                         padding:4px 12px;border-radius:5px;
+                         background:rgba(0,242,255,0.06);
+                         border:1px solid rgba(0,242,255,0.2);
+                         color:rgba(0,242,255,0.55);">
+              ${d.model_used || selectedModel.toUpperCase()}
+            </span>
           </div>
-          <div style="margin-top:16px;font-size:10px;font-family:'Space Mono';color:rgba(0,242,255,0.4);letter-spacing:0.1em;">
-            → CLICK IMAGE TO OPEN FULLSCREEN VIEWER<br>→ USE GESTURE PINCH TO ZOOM WITH WATER EFFECT
+
+          <!-- Confidence + info -->
+          <div style="display:flex;align-items:center;gap:16px;
+                      flex-wrap:wrap;margin-bottom:20px;">
+            <div style="padding:12px 24px;
+                        background:${tumorColor}18;
+                        border:1px solid ${tumorColor}55;
+                        border-radius:10px;
+                        font-family:'Orbitron';font-size:22px;
+                        color:${tumorColor};">
+              ${d.confidence}%
+            </div>
+            <div style="font-size:10px;color:rgba(100,140,180,0.7);
+                        font-family:'Space Mono';line-height:1.8;">
+              CERTAINTY INDEX<br>
+              GRAD-CAM VERIFIED<br>
+              DEVICE: ${d.device||'N/A'}
+            </div>
           </div>
+
+          <!-- All-class probability bars -->
+          <div style="margin-bottom:16px;">
+            <div style="font-family:'Orbitron';font-size:8px;letter-spacing:0.16em;
+                        color:rgba(0,242,255,0.4);margin-bottom:10px;">
+              CLASS PROBABILITY DISTRIBUTION
+            </div>
+            ${scoresHtml}
+          </div>
+
+          <!-- Hint -->
+          <div style="font-size:9px;font-family:'Space Mono';
+                      color:rgba(0,242,255,0.3);letter-spacing:0.1em;line-height:1.9;">
+            → CLICK IMAGE TO OPEN FULLSCREEN VIEWER<br>
+            → USE GESTURE PINCH TO ZOOM WITH WATER EFFECT
+          </div>
+
         </div>`;
+
       area.appendChild(row);
-      typeWriterEffect(rid,d.tumor_type);
+      typeWriterEffect(rid, d.tumor_type);
+
     } catch(e){
       if(loadedCount===0) area.innerHTML='';
-      area.innerHTML+=`<div style="text-align:center;padding:60px;font-family:'Space Mono';color:rgba(239,68,68,0.7);font-size:12px;">
-        FastAPI OFFLINE — No response from 127.0.0.1:8000<br>
-        <span style="font-size:10px;color:rgba(100,140,180,0.4);margin-top:8px;display:block;">Make sure your backend is running</span>
-      </div>`;
+      loadedCount++;
+
+      const errRow=document.createElement('div');
+      errRow.style.cssText='text-align:center;padding:60px;';
+      errRow.innerHTML=`
+        <div style="font-family:'Space Mono';color:rgba(239,68,68,0.8);font-size:12px;line-height:2;">
+          <i class="fas fa-exclamation-triangle" style="font-size:28px;display:block;margin-bottom:16px;opacity:0.6;"></i>
+          ERROR — ${e.message || 'No response from 127.0.0.1:8000'}
+        </div>
+        <div style="font-size:10px;color:rgba(100,140,180,0.4);margin-top:10px;font-family:'Space Mono';">
+          Scan ${i+1}: ${queue[i].name}<br>
+          Make sure FastAPI backend is running
+        </div>`;
+      area.appendChild(errRow);
     }
   }
+
+  // ── Final summary bar ──
+  if(loadedCount>0){
+    const summary=document.createElement('div');
+    summary.style.cssText=`
+      text-align:center;padding:32px 0 16px;
+      font-family:'Orbitron';font-size:9px;letter-spacing:0.2em;
+      color:rgba(0,242,255,0.35);border-top:1px solid rgba(0,242,255,0.08);
+      margin-top:32px;`;
+    summary.innerHTML=`
+      SWEEP COMPLETE — ${loadedCount} SCAN(S) PROCESSED
+      <span style="margin-left:16px;color:rgba(0,242,255,0.2);">|</span>
+      <span style="margin-left:16px;">MODEL: ${selectedModel.toUpperCase()}</span>`;
+    area.appendChild(summary);
+  }
+
+  setLog('SWEEP COMPLETE', '#4ade80');
 }
+/* ════════════════════════════════════════════════════
+   I. MODEL SELECTOR — gesture-friendly custom dropdown
+════════════════════════════════════════════════════ */
+let selectedModel      = 'cnn';
+let modelDropdownOpen  = false;
+
+const MODEL_INFO = {
+  cnn: {
+    label   : '⬡ CUSTOM CNN — 92.00% TEST ACC',
+    arch    : '4-block CNN + BatchNorm',
+    params  : '~8.8M trainable',
+    val_acc : '96.70%',
+  },
+  resnet18: {
+    label   : '⬡ RESNET18 PRETRAINED — 94.81% TEST ACC',
+    arch    : 'ResNet18 pretrained backbone',
+    params  : '~11.7M trainable',
+    val_acc : '97.32%',
+  }
+};
+
+function toggleModelDropdown(){
+  modelDropdownOpen = !modelDropdownOpen;
+  const panel  = document.getElementById('model-options');
+  const arrow  = document.getElementById('model-arrow');
+  const trigger = document.getElementById('model-trigger');
+
+  if(modelDropdownOpen){
+    panel.classList.add('open');
+    arrow.textContent           = '▴';
+    trigger.style.borderColor   = 'var(--cyan)';
+    trigger.style.boxShadow     = '0 0 16px rgba(0,242,255,0.2)';
+  } else {
+    panel.classList.remove('open');
+    arrow.textContent           = '▾';
+    trigger.style.borderColor   = 'rgba(0,242,255,0.28)';
+    trigger.style.boxShadow     = 'none';
+  }
+}
+
+function selectModel(key){
+  selectedModel = key;
+  const info    = MODEL_INFO[key];
+
+  // Update trigger label
+  document.getElementById('model-trigger-label').textContent = info.label;
+
+  // Update info badge
+  document.getElementById('model-badge').innerHTML = `
+    <span style="color:rgba(0,242,255,0.5);">&gt; arch:</span> ${info.arch}<br>
+    <span style="color:rgba(0,242,255,0.5);">&gt; params:</span> ${info.params}<br>
+    <span style="color:rgba(0,242,255,0.5);">&gt; val_acc:</span>
+    <span style="color:#4ade80;">${info.val_acc}</span>
+  `;
+
+  // Mark active option
+  document.querySelectorAll('.model-opt').forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.key === key);
+  });
+
+  // Close dropdown
+  modelDropdownOpen = false;
+  const panel   = document.getElementById('model-options');
+  const arrow   = document.getElementById('model-arrow');
+  const trigger = document.getElementById('model-trigger');
+  panel.classList.remove('open');
+  arrow.textContent         = '▾';
+  trigger.style.borderColor = 'rgba(0,242,255,0.28)';
+  trigger.style.boxShadow   = 'none';
+
+  // Pulse trigger to confirm
+  trigger.style.borderColor = 'var(--cyan)';
+  trigger.style.boxShadow   = '0 0 20px rgba(0,242,255,0.35)';
+  setTimeout(() => {
+    trigger.style.borderColor = 'rgba(0,242,255,0.28)';
+    trigger.style.boxShadow   = 'none';
+  }, 700);
+
+  setLog(`MODEL → ${key.toUpperCase()}`, 'var(--cyan)');
+  showTip(`MODEL: ${key.toUpperCase()} SELECTED ✓`, 1400);
+}
+
+// Close dropdown if gesture cursor moves far away from it
+function closeDropdownIfAway(x, y){
+  if(!modelDropdownOpen) return;
+  const wrap = document.getElementById('model-dropdown-wrap');
+  if(!wrap) return;
+  const r = wrap.getBoundingClientRect();
+  const padded = 60;
+  if(x < r.left-padded || x > r.right+padded ||
+     y < r.top-padded  || y > r.bottom+padded){
+    modelDropdownOpen = false;
+    document.getElementById('model-options').classList.remove('open');
+    document.getElementById('model-arrow').textContent          = '▾';
+    document.getElementById('model-trigger').style.borderColor  = 'rgba(0,242,255,0.28)';
+    document.getElementById('model-trigger').style.boxShadow    = 'none';
+  }
+}
+
+// Close on outside mouse click (non-gesture users)
+document.addEventListener('click', e => {
+  if(!e.target.closest('#model-dropdown-wrap')) {
+    modelDropdownOpen = false;
+    const panel = document.getElementById('model-options');
+    if(panel) panel.classList.remove('open');
+    const arrow = document.getElementById('model-arrow');
+    if(arrow) arrow.textContent = '▾';
+  }
+});
+
+async function syncModelsFromBackend(){
+  try{
+    const r    = await fetch('http://127.0.0.1:8000/models');
+    const data = await r.json();
+
+    data.models.forEach(m => {
+      const btn = document.querySelector(`.model-opt[data-key="${m.key}"]`);
+      if(btn && !m.loaded){
+        btn.style.opacity = '0.45';
+        btn.querySelector('div').textContent += ' [OFFLINE]';
+      }
+    });
+
+    if(data.default){
+      selectModel(data.default);
+    }
+  } catch(e){
+    console.warn('Backend not reachable for model sync:', e);
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(syncModelsFromBackend, 800);
+});
