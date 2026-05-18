@@ -261,7 +261,7 @@ function toggleFile(pool,idx){
   const si=selected.findIndex(s=>s.name===file.name&&s.url===file.url);
   if(si>=0) selected.splice(si,1); else selected.push(file);
   renderTree(); renderChips();
-}
+} 
 function isSelected(file){ return selected.some(s=>s.name===file.name&&s.url===file.url); }
 function getExt(name){ return (name.split('.').pop()||'').toUpperCase(); }
 
