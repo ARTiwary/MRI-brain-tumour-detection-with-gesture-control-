@@ -901,9 +901,9 @@ async function processBatch(){
     try{
       // ── API call with selected model ──
       const r=await fetch(
-        `http://127.0.0.1:8000/predict?model_key=${selectedModel}`,
-        { method:'POST', body:fd }
-      );
+  `https://mri-brain-tumour-detection-with-gesture-voqw.onrender.com/predict?model_key=${selectedModel}`,
+  { method:'POST', body:fd }
+);
 
       if(!r.ok){
         const err=await r.json();
@@ -1185,7 +1185,7 @@ document.addEventListener('click', e => {
 
 async function syncModelsFromBackend(){
   try{
-    const r    = await fetch('http://127.0.0.1:8000/models');
+    const r    = await fetch('https://mri-brain-tumour-detection-with-gesture-voqw.onrender.com/models');
     const data = await r.json();
 
     data.models.forEach(m => {
