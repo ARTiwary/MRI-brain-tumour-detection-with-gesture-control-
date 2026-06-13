@@ -2,7 +2,7 @@ MRI Brain Tumor Detection with Gesture Control (for contact less interaction for
 1.
 <div align="center">
 
-# 🧠 NEURO-CORE v5.0
+# 🧠 NEURO-CORE 
 ### Brain Tumor MRI Detection with Gesture Control
 
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
