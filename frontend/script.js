@@ -700,10 +700,10 @@ async function processBatch(){
   for(let i=0;i<queue.length;i++){
     const fd=new FormData(); fd.append('file',queue[i]);
     try{
-      const r=await fetch(
-        `http://127.0.0.1:8000/predict?model_key=${selectedModel}&explain=true`,
-        {method:'POST',body:fd}
-      );
+      const r = await fetch(
+         `https://mri-brain-tumour-detection-with-gesture-voqw.onrender.com/predict?model_key=${selectedModel}&explain=true`,
+         { method: 'POST', body: fd }
+        );
       if(!r.ok){ const err=await r.json(); throw new Error(err.detail||`HTTP ${r.status}`); }
       const d=await r.json();
 
@@ -903,8 +903,8 @@ document.addEventListener('click',e=>{
 
 async function syncModelsFromBackend(){
   try{
-    // const r=await fetch('https://your-render-url.onrender.com/models');
-    const r=await fetch('http://127.0.0.1:8000/models');
+    const r=await fetch('https://mri-brain-tumour-detection-with-gesture-voqw.onrender.com/models');
+    // const r=await fetch('http://127.0.0.1:8000/models');
     const data=await r.json();
     data.models.forEach(m=>{
       const btn=document.querySelector(`.model-opt[data-key="${m.key}"]`);
