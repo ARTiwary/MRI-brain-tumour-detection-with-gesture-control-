@@ -7,7 +7,6 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)](https://pytorch.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![MediaPipe](https://img.shields.io/badge/MediaPipe-Hands-0097A7?style=for-the-badge&logo=google&logoColor=white)](https://mediapipe.dev)
-[![Groq](https://img.shields.io/badge/Groq-LLaMA_3.1-F55036?style=for-the-badge)](https://groq.com)
 [![License](https://img.shields.io/badge/License-MIT-2563eb?style=for-the-badge)](LICENSE)
 
 > A sterile, gesture-controlled neural diagnostic interface for brain tumor classification from MRI scans — powered by three independently trained deep learning models (Custom CNN, ResNet-18, EfficientNet-B0), Grad-CAM explainability, LLM-generated plain-language summaries via Groq, and a fully in-browser MediaPipe hand-tracking interface designed for contactless clinical use.
@@ -53,7 +52,6 @@ NeuroCore is an end-to-end brain tumor MRI classification system built as a B.Te
 |---|---|
 | **Three-Model Support** | Custom CNN (89.94%), ResNet-18 (95.12%), EfficientNet-B0 (95.75%) — selectable via dropdown |
 | **Grad-CAM Heatmaps** | Per-model backend-generated activation maps using each model's validated target layer |
-| **LLM Explanation** | Optional Groq LLaMA 3.1 plain-language summary of prediction, strictly constrained to numeric output only |
 | **Medical-Grade Evaluation** | Validation-tuned cost-weighted decision rule, bootstrap 95% CIs, per-class sensitivity/specificity |
 | **Gesture Control** | Full in-browser hand tracking — pinch, dwell, drag, two-hand scroll, pinch zoom, air-grab disable |
 | **Brain MRI Filter** | Low-confidence rejection rejects non-MRI images before displaying a result |
@@ -129,10 +127,6 @@ FastAPI  (uvicorn, http://127.0.0.1:8000)
       │     └── EfficientNet-B0: model.features[-1]
       │     └── OpenCV JET overlay → base64 JPEG
       │
-      ├── generate_explanation()       ← Groq API (only if ?explain=true)
-      │     └── llama-3.1-8b-instant  → 3–5 sentence summary
-      │         (strictly constrained: describes model output only,
-      │          never adds new medical judgment)
       │
       └── JSON response
             { tumor_type, confidence, all_scores, heatmap, explanation? }
@@ -384,18 +378,6 @@ tumor-detection-efficientnet-b0-224.pth
 
 > **Note:** Weights are not included due to file size. Train using the notebook or contact the author.
 
-### 5. Set Groq API key (optional)
-
-```powershell
-# Windows PowerShell
-$env:GROQ_API_KEY="your_groq_api_key_here"
-```
-
-```bash
-# Linux / macOS
-export GROQ_API_KEY="your_groq_api_key_here"
-```
-
 If no key is set, the `/predict` endpoint works normally — the `explanation` field is simply absent from the response.
 
 ---
@@ -422,7 +404,7 @@ Open `frontend/index.html` directly in your browser — no build step, no server
 1. **Load scans** — click Folder or Files in the left panel, or drag images into the drop zone
 2. **Select model** — use the dropdown to switch between CNN, ResNet-18, or EfficientNet-B0
 3. **Process** — click **Run neural diagnostic sweep**
-4. **View results** — tumor class, confidence %, Grad-CAM heatmap, per-class probability bars, optional LLM summary
+4. **View results** — tumor class, confidence %, Grad-CAM heatmap, per-class probability bars
 5. **Inspect** — click any result image to open the fullscreen water-ripple viewer
 6. **Enable gestures** — click **Gesture off** button top-right to activate hand tracking
 
@@ -434,7 +416,7 @@ Open `frontend/index.html` directly in your browser — no build step, no server
 Returns API status, device, and class names.
 
 ### `GET /health`
-Returns server health, device, and list of currently loaded model keys.
+Returns server health, device, and list of currently loaded model keys
 
 ### `GET /models`
 Returns the model registry for the frontend dropdown.
@@ -457,7 +439,6 @@ Returns the model registry for the frontend dropdown.
 | Param | Type | Default | Values |
 |---|---|---|---|
 | `model_key` | string | `efficientnet_b0` | `cnn`, `resnet18`, `efficientnet_b0` |
-| `explain` | bool | `false` | `true` to add Groq LLM summary |
 
 **Body:** `multipart/form-data` with `file` field (JPEG or PNG).
 
@@ -495,7 +476,6 @@ Returns the model registry for the frontend dropdown.
 | Loss function | Focal Loss (γ=2) + class weighting |
 | Explainability | Grad-CAM — per-model validated target layer |
 | Backend | FastAPI, Uvicorn |
-| LLM explanation | Groq API — LLaMA 3.1 8B Instant (optional) |
 | Image processing | OpenCV, Pillow, NumPy |
 | Gesture tracking | MediaPipe Hands (WebAssembly, in-browser) |
 | 3D graphics | Three.js r128 |
